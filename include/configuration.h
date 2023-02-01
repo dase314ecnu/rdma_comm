@@ -1,0 +1,6 @@
+#ifndef CONFIGURATION_H
+#define CONFIGURATION_H
+
+#define MAX_SEND_NODEID (12)
+
+#endif

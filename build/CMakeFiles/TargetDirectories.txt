@@ -1,0 +1,3 @@
+/data/zhouhuahui/SharedCacheService/build/CMakeFiles/rebuild_cache.dir
+/data/zhouhuahui/SharedCacheService/build/CMakeFiles/edit_cache.dir
+/data/zhouhuahui/SharedCacheService/build/CMakeFiles/test1.dir
