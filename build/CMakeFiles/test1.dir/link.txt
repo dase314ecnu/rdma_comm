@@ -1,1 +1,0 @@
-/usr/bin/c++  -pthread   CMakeFiles/test1.dir/src/myipc.cpp.o CMakeFiles/test1.dir/src/rdma_communication.cpp.o CMakeFiles/test1.dir/src/waitset.cpp.o CMakeFiles/test1.dir/test/test_shared_memory.cpp.o  -o test1 
