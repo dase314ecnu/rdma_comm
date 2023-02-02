@@ -12,12 +12,13 @@
 
 typedef struct QueuePairMeta
 {
-    uint64_t registered_memory;
+    uintptr_t registered_memory;
     uint32_t registered_key;
     uint32_t qp_num;
+    uint32_t qp_psn;
     uint16_t lid;
-    uint8_t  gid[16];
-}QueuePairMetaData;
+    union ibv_gid gid;
+} QueuePairMetaData;
 
 enum SlotState {
     SLOT_IDLE,         /** 当前slot可以用于发送消息 */
@@ -44,13 +45,14 @@ typedef struct ZAwake {
     sem_t          *sems;  
 } ZAwake;
 
-
 /**
  * 负责建立QP连接，在QP上发布发送和接收任务。
  * 线程不安全。
  */
 class RdmaQueuePair{
 private:
+    bool                     use_shared_memory = false;  // use_shared_memory为true时，一些变量是在
+                                                         // 共享内存上进行分配的: local_memory
     /* local rdma queue pair resources */
     uint32_t                 rdma_port = 0;    //用于rdma查询的端口号: ibv_query_port。一般是1
     const char              *device_name = nullptr;  //设备名称。一般是"mlx5_0"
@@ -61,6 +63,7 @@ private:
     struct ibv_cq           *cq = nullptr;             /* Completion Queue */
     struct ibv_qp           *qp = nullptr;             /* queue pair with remote qp */
     union  ibv_gid           local_gid;
+    uint32_t                 qp_psn;
     
     uint64_t          local_memory_size = 0;   /* QP中的mr的大小 */
     void             *local_memory = 0;   /* Memory begin address */
@@ -74,15 +77,28 @@ private:
     uintptr_t  remote_memory = 0;
     uint32_t   remote_mr_key = 0;
     uint32_t   remote_qp_num = 0;
+    uint32_t   remote_qp_psn = 0;
     uint16_t   remote_lid = 0;
-    uint8_t    remote_gid[16];
 
 private:
-    void initializeLocalRdmaResource();
-    void createQueuePair();
-    bool modifyQPtoInit();
-    bool modifyQPtoRTR();
-    bool modifyQPtoRTS();
+    /* 使用ibverbs基础库，来初始化本机的RDMA资源：
+     * device_name, ibv_context, ibv_port_attr, ibv_comp_channel, ibv_cq
+     * ibv_qp, ibv_gid。 
+     * 其中，ibv_qp只是初始化，并未到达RTR, RTS状态（QP的状态）
+     * 
+     * @return 0表示正常执行，-1表示出现异常
+     */
+    int initializeLocalRdmaResource();
+    /* 销毁RdmdaQueuePair中创建所有的资源 */
+    void destroy();
+    /* 
+     * 创建一个QP, type是IBV_QPT_RC
+     * @return 0表示正常执行，-1表示出现异常
+     */
+    int createQueuePair();
+    int modifyQPtoInit();
+    int modifyQPtoRTR();
+    int modifyQPtoRTS();
 
 public:
     RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size, 
@@ -93,15 +109,20 @@ public:
     ~RdmaQueuePair();
     void*    GetLocalMemory();
     uint64_t GetLocalMemorySize();
-    /** 在slot_idx的slot处赋值长度为size的send_content */
-    void SetSendContent(void *send_content, uint64_t size, uint64_t slot_idx) {}
-    void PostSend(uint32_t imm_data, uint64_t slot_idx) {}
-    void PostReceive(uint64_t slot_idx) {}
-    int  PullCompletionFromCQ(struct ibv_wc *wc) { return 0; }   
-    void ReceiveRQCompletion() {}  
-    void ReadyToUseQP() {}
-    void GetLocalQPMetaData(QueuePairMetaData &local_data) {}
-    void SetRemoteQPMetaData(QueuePairMetaData &remote_data) {}
+    /* 在slot_idx的slot处赋值长度为size的send_content */
+    void SetSendContent(void *send_content, uint64_t size, uint64_t slot_idx);
+    /* 将slot_idx处的slot发送给对端 */
+    int PostSend(uint32_t imm_data, uint64_t slot_idx);
+    /* 向RNIC发送一个recv wr */
+    int PostReceive();
+    /* 
+     * 从CQ中取出一个WC，非阻塞
+     * @return 1: 成功取出 0：没有WC -1：出现异常
+     */
+    int  PollCompletionFromCQ(struct ibv_wc *wc); 
+    int ReadyToUseQP();
+    void GetLocalQPMetaData(QueuePairMetaData &local_data);
+    void SetRemoteQPMetaData(QueuePairMetaData &remote_data);
 };
 
 /** 
@@ -147,6 +168,12 @@ public:
     // void PostRequest(void *send_content, uint64_t size);
 };
 
+/** 
+ * SharedCacheService中其他线程要发送消息，则通过CommonRdmaClient。
+ */
+class CommonRdmaCient : public RdmaClient {
+
+};
 
 
 /** 
@@ -166,7 +193,7 @@ public:
  * 
  * 由于这个类要创建在共享内存中，所以父类不应该有虚函数。
  */
-class SharedRdmaClient : public RdmaClient{
+class SharedRdmaClient : public RdmaClient {
     friend class TestSharedMemoryClass;
 private:
     /** 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，说明某个slot中含有要发送的数据。*/
