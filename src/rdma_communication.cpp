@@ -6,8 +6,14 @@
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h>
+#include <exception>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <stdio.h>
 
 #include "rdma_communication.h"
+#include "inner_scope.h"
 
 int RdmaQueuePair::initializeLocalRdmaResource() {
   struct ibv_device **device_list = nullptr;
@@ -97,30 +103,6 @@ int RdmaQueuePair::initializeLocalRdmaResource() {
   }
 
   return this->createQueuePair();
-}
-
-void RdmaQueuePair::destroy() {
-  if (this->qp != nullptr) {
-    ibv_destroy_qp(this->qp);
-  }
-  if (this->local_mr != nullptr) {
-    ibv_dereg_mr(this->local_mr);
-  }
-  if (this->pd != nullptr) {
-    ibv_dealloc_pd(this->pd);
-  }
-  if (this->cq != nullptr) {
-    ibv_destroy_cq(this->cq);
-  }
-  if (this->channel != nullptr) {
-    ibv_destroy_comp_channel(this->channel);
-  }
-  if (this->ctx != nullptr) {
-    ibv_close_device(this->ctx);
-  }
-  if (this->use_shared_memory == false) {
-    free(this->local_memory);
-  }
 }
 
 int RdmaQueuePair::createQueuePair() {
@@ -225,10 +207,14 @@ RdmaQueuePair::RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size
   // Initialize local memory for the QP to register in MR
   this->local_memory_size = this->local_slot_size * this->local_slot_num;
   this->local_memory = malloc(this->local_memory_size);
+  if (this->local_memory == nullptr) {
+    throw std::bad_exception();
+  }
 
   int rc = this->initializeLocalRdmaResource();
   if (rc != 0) {
-    this->destroy();
+    this->Destroy();
+    throw std::bad_exception();
   }
 }
 
@@ -244,18 +230,37 @@ RdmaQueuePair::RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size
   
   int rc = this->initializeLocalRdmaResource();
   if (rc != 0) {
-    this->destroy();
+    this->Destroy();
+    throw std::bad_exception();
   }
 }
 
 RdmaQueuePair::~RdmaQueuePair() {
-  if (this->local_memory != 0) {
+  this->Destroy();
+}
+
+void RdmaQueuePair::Destroy() {
+  if (this->qp != nullptr) {
+    ibv_destroy_qp(this->qp);
+  }
+  if (this->local_mr != nullptr) {
+    ibv_dereg_mr(this->local_mr);
+  }
+  if (this->pd != nullptr) {
+    ibv_dealloc_pd(this->pd);
+  }
+  if (this->cq != nullptr) {
+    ibv_destroy_cq(this->cq);
+  }
+  if (this->channel != nullptr) {
+    ibv_destroy_comp_channel(this->channel);
+  }
+  if (this->ctx != nullptr) {
+    ibv_close_device(this->ctx);
+  }
+  if (this->use_shared_memory == false) {
     free(this->local_memory);
   }
-}
-
-RdmaQueuePair::~RdmaQueuePair() {
-  this->destroy();
 }
 
 void* RdmaQueuePair::GetLocalMemory() {
@@ -349,6 +354,7 @@ int RdmaQueuePair::ReadyToUseQP() {
   if (this->modifyQPtoRTS() != 0) {
     return -1;
   }
+  return 0;
 }
 
 void RdmaQueuePair::GetLocalQPMetaData(QueuePairMetaData &local_data) {
@@ -368,44 +374,272 @@ void RdmaQueuePair::SetRemoteQPMetaData(QueuePairMetaData &remote_data) {
   this->remote_qp_psn = remote_data.qp_psn;
 }
 
+/** ----------------------------------------------------------------------------------------------------
+ * start impl RdmaClient
+ * -----------------------------------------------------------------------------------------------------
+ */
+
+int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
+  int rc = 0;
+  char *scratch = (char *)shared_memory;
+
+  SCOPEEXIT([&]() {
+    if (end_memory != nullptr) {
+      *end_memory = (void *)scratch;
+    }
+  });
+  
+  if (shared_memory != nullptr) {
+    this->rdma_queue_pairs = (RdmaQueuePair **)scratch;
+    scratch += sizeof(RdmaQueuePair *) * this->node_num;
+  } else {
+    this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
+  }
+  if (this->rdma_queue_pairs == nullptr) {
+    return -1;
+  }
+  for (int i = 0; i < this->node_num; ++i) {
+    this->rdma_queue_pairs[i] = nullptr;
+  }
+
+  for (int i = 0; i < this->node_num; ++i) {
+    if (shared_memory == nullptr) {
+      this->rdma_queue_pairs[i] = new RdmaQueuePair(this->slot_num, this->slot_size);
+      if (this->rdma_queue_pairs[i] == nullptr) {
+        return -1;
+      }
+    } else {
+      this->rdma_queue_pairs[i] = (RdmaQueuePair *)scratch;
+      *(this->rdma_queue_pairs[i]) = RdmaQueuePair(this->slot_num, 
+              this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
+              DEVICE_NAME, RDMA_PORT);
+      scratch += (sizeof(RdmaQueuePair) + 
+              this->rdma_queue_pairs[i]->GetLocalMemorySize());
+    }
+    if (this->rdma_queue_pairs[i] == nullptr) {
+      return -1;
+    }
+
+    int sock = this->connectSocket();
+    if (sock < 0) {
+      return -1;
+    }
+
+    QueuePairMeta meta;
+    QueuePairMeta remote_meta;
+    uint32_t      compute_id = MY_COMPUTE_ID;
+    uint32_t      remote_compute_id;     
+    this->rdma_queue_pairs[i]->GetLocalQPMetaData(meta);
+    rc = this->dataSyncWithSocket(sock, compute_id, meta, remote_compute_id, 
+            remote_meta);
+    if (rc != 0) {
+      return -1;
+    }
+    this->rdma_queue_pairs[i]->SetRemoteQPMetaData(remote_meta);
+    
+    // 准备进行Send/Receive操作
+    rc = this->rdma_queue_pairs[i]->ReadyToUseQP();
+    if (rc != 0) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+int RdmaClient::connectSocket() {
+  int sock;
+  struct sockaddr_in remote_address;
+  struct timeval timeout = {3, 0};
+
+  memset(&remote_address, 0, sizeof(remote_address));
+  remote_address.sin_family = AF_INET;
+  inet_aton(this->remote_ip.c_str(), (struct in_addr*)&remote_address.sin_addr);
+  remote_address.sin_port = htons(remote_port);
+
+  if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    return -1;
+  }
+
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+  while (connect(sock, (struct sockaddr*)&remote_address, sizeof(struct sockaddr)) != 0) {
+    usleep(1000);
+  }
+
+  return sock;
+}
+
+int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
+            uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
+{
+  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta);
+  char *send_buf  = nullptr;
+  char *recv_buf  = nullptr;
+  send_buf        = (char *)malloc(length);
+  recv_buf        = (char *)malloc(length);
+  char  *pointer  = send_buf;
+  int    rc       = 0;
+  size_t write_bytes = 0;
+  size_t read_bytes  = 0;
+
+  SCOPEEXIT([&]() {
+    if (send_buf != nullptr) {
+      delete send_buf;
+    }
+    if (recv_buf != nullptr) {
+      delete recv_buf;
+    }
+  });
+
+  sprintf(pointer, "%08x", htobe32(compute_id));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%016lx", htobe64(meta.registered_memory));
+  pointer += sizeof(uintptr_t);
+  sprintf(pointer, "%08x", htobe32(meta.registered_key));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%08x", htobe32(meta.qp_num));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%08x", htobe32(meta.qp_psn));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%04x", htobe16(meta.lid));
+  pointer += sizeof(uint16_t);
+  
+  pointer = send_buf;
+  while (write_bytes < length) {
+    rc = write(sock, pointer, length);
+    if (rc <= 0) {
+      return -1;
+    } else {
+      write_bytes += rc;
+      pointer     += rc;
+    }
+  }
+  
+  pointer = recv_buf;
+  while (read_bytes < length) {
+    rc = read(sock, pointer, length - read_bytes);
+    if (rc <= 0) {
+      return -1;
+    } else {
+      read_bytes += rc;
+      pointer    += rc;
+    }
+  }
+
+  sscanf(recv_buf, "%08x%016lx%08x%08x%08x%04x", &compute_id, 
+          &remote_meta.registered_memory, &remote_meta.registered_key,
+          &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
+
+  return 0;
+}
 
 
 RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, 
             uint32_t _remote_port, uint32_t _node_num) 
-            : remote_ip(_remote_ip), remote_port(_remote_port), node_num(_node_num)
+            : remote_ip(_remote_ip), remote_port(_remote_port), node_num(_node_num), 
+              slot_size(_slot_size), slot_num(_slot_num)
 {
-  this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
-  for (int i = 0; i < this->node_num; ++i) {
-    this->rdma_queue_pairs[i] = new RdmaQueuePair(_slot_num, _slot_size);
+  int rc = 0;
+
+  rc = this->createRdmaQueuePairs(nullptr);
+  if (rc != 0) {
+    throw std::bad_exception();
   }
-  /** @todo */
+
+  this->sends = new ZSend[this->node_num];
+  if (this->sends = nullptr) {
+    throw std::bad_exception();
+  }
+  for (int i = 0; i < this->node_num; ++i) {
+    try {
+      this->sends[i] = ZSend(nullptr, this->slot_num);
+    } catch (...) {
+      throw std::bad_exception();
+    }
+  }
+
+  this->awakes = new ZAwake[this->node_num];
+  if (this->awakes == nullptr) {
+    throw std::bad_exception();
+  }
+  for (int i = 0; i < this->node_num; ++i) {
+    try {
+      this->awakes[i] = ZAwake(nullptr, this->slot_num);
+    } catch (...) {
+      throw std::bad_exception();
+    }
+  }
 }
 
 RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void *_shared_memory)
             : remote_ip(_remote_ip), remote_port(_remote_port), node_num(_node_num)
 {
-  /** 
-   * _shared_memory的布局是：
-   * SharedRdmaClient node_num_RdmaQueuePair_LocalMemory node_num_ZAwake N_sem_t
-   */
-  this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
+  int rc = 0;
   char *scratch = (char *)_shared_memory;
+  void *end_memory;
+
+  rc = this->createRdmaQueuePairs(scratch, &end_memory);
+  if (rc != 0) {
+    throw std::bad_exception();
+  }
+  scratch = (char *)end_memory;
+
+  this->sends = (ZSend *)scratch;
+  scratch += sizeof(ZSend) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
-    this->rdma_queue_pairs[i] = new RdmaQueuePair(_slot_num, _slot_size, _shared_memory, "mlx5_0", 1);
-    scratch += this->rdma_queue_pairs[i]->GetLocalMemorySize();
+    try {
+      this->sends[i] = ZSend(scratch, this->slot_num);
+      scratch += sizeof(SlotState) * (this->slot_num + 1);
+    } catch (...) {
+      throw std::bad_exception();
+    }
   }
 
   this->awakes = (ZAwake *)scratch;
   scratch += sizeof(ZAwake) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
-    this->awakes[i].sems = (sem_t *)scratch;
-    scratch += sizeof(sem_t) * (_slot_num + 1);
-    for (int j = 0; j < _slot_num + 1; ++j) {
-      sem_init(&(this->awakes[i].sems[j]), 1, 0);
+    try {
+      this->awakes[i] = ZAwake(scratch, this->slot_num);
+      scratch += sizeof(sem_t) * (this->slot_num + 1);
+    } catch (...) {
+      throw std::bad_exception();
     }
   }
-  /** @todo */
+}
+
+RdmaClient::~RdmaClient() {
+  if (this->rdma_queue_pairs != nullptr) {
+    for (int i = 0; i < this->node_num; ++i) {
+      if (this->rdma_queue_pairs[i] != nullptr) {
+        if (this->use_shared_memory == false) {
+          delete this->rdma_queue_pairs[i];
+        } else {
+          this->rdma_queue_pairs[i]->Destroy();
+        }
+      }
+    }
+    if (this->use_shared_memory == false) {
+      delete[] this->rdma_queue_pairs;
+    }
+  }
+  if (this->sends != nullptr && this->use_shared_memory == false) {
+    for (int i = 0; i < this->node_num; ++i) {
+      if (this->sends[i].states != nullptr) {
+        delete[] this->sends[i].states;
+      }
+    }
+  }
+  if (this->awakes != nullptr && this->use_shared_memory == false) {
+    for (int i = 0; i < this->node_num; ++i) {
+      if (this->awakes[i].sems != nullptr) {
+        for (int j = 0; j < this->slot_num + 1; ++i) {
+          sem_destroy(&(this->awakes[i].sems[j]));
+        }
+        delete[] this->awakes[i].sems;
+      }
+    }
+  }
 }
 
 SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 

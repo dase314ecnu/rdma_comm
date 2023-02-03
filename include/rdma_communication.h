@@ -6,9 +6,11 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <thread>
+#include <exception>
 
 #include "configuration.h"
 #include "test/test_shared_memory.h"
+#include "inner_scope.h"
 
 typedef struct QueuePairMeta
 {
@@ -32,17 +34,77 @@ enum SlotState {
  * 必须使用pthread_mutext_t来保护ZSend，很显然，效率不好。
  */
 typedef struct ZSend {
-    SlotState *states;  /** 一个QP的所有slot的状态 */
-    uint32_t   front;  /** 最旧的还处于SLOT_INPROGRESS的slot */
-    uint32_t   rear;   /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
-    uint32_t   notsent_front;   /** front到rear中还未发送的slot的最旧的那个 */
-    uint32_t   notsent_rear;    /** front到rear中还未发送的slot的最新的那个的后面 */
-    pthread_spinlock_t spinlock;   /** 使用自旋锁保护这个ZSend */
+    SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
+    uint32_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
+    uint32_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
+    uint32_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
+    uint32_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
+    pthread_spinlock_t spinlock;     /** 使用自旋锁保护这个ZSend */
+    
+    ZSend() {}
+    /** 
+     * @param _shared_memroy: ZSend是否是进程间共享的，如果是的话，
+     * 则_shared_memory不为nullptr, 并且ZSend和status要床在_shared_memroy中
+     */
+    ZSend(void *_shared_memory, uint64_t _slot_num) {
+        int shared = (_shared_memory == nullptr ? 0 : 1);
+        // 初始化spinlock
+        if (pthread_spin_init(&this->spinlock, shared) != 0) {
+            throw std::bad_exception();
+        }
+        // 给this->states分配空间并初始化
+        if (shared != 0) {
+            char *scratch = (char *)_shared_memory;
+            this->states  = (SlotState *)scratch;
+        } else {
+            this->states = new SlotState[_slot_num + 1];
+            if (this->states == nullptr) {
+                throw std::bad_exception();
+            }
+        }
+        for (int i = 0; i < _slot_num + 1; ++i) {
+            this->states[i] = SlotState::SLOT_IDLE;
+        }
+    }
 } ZSend;
 
 typedef struct ZAwake {
     /** 每个slot都对应一个sem_t，每当进程/线程要等待响应时，就使用这里的sems */
-    sem_t          *sems;  
+    sem_t          *sems = nullptr;  
+    ZAwake() {}
+    ZAwake(void *_shared_memory, uint64_t _slot_num) {
+        int shared = (_shared_memory == nullptr ? 0 : 1);
+        int i = 0;
+        SCOPEEXIT([&]() {
+            if (i < _slot_num + 1) {
+                // sems并没有完全初始化完成
+                if (this->sems != nullptr) {
+                    for (int j = 0; j < i; ++j) {
+                        (void) sem_destroy(&(this->sems[j]));
+                    }
+                    if (shared == 0) {
+                        delete[] this->sems;
+                    }
+                    this->sems = nullptr;
+                }
+            }
+        });
+
+        if (shared != 0) {
+            char *scratch = (char *)_shared_memory;
+            this->sems = (sem_t *)scratch;
+        } else {
+            this->sems = new sem_t[_slot_num + 1];
+            if (this->sems == nullptr) {
+                throw std::bad_exception();
+            }
+        }
+        for (i = 0; i < _slot_num + 1; ++i) {
+            if (sem_init(&(this->sems[i]), shared, 0) != 0) {
+                throw std::bad_exception();
+            }
+        }
+    }
 } ZAwake;
 
 /**
@@ -81,7 +143,8 @@ private:
     uint16_t   remote_lid = 0;
 
 private:
-    /* 使用ibverbs基础库，来初始化本机的RDMA资源：
+    /**
+     * 使用ibverbs基础库，来初始化本机的RDMA资源：
      * device_name, ibv_context, ibv_port_attr, ibv_comp_channel, ibv_cq
      * ibv_qp, ibv_gid。 
      * 其中，ibv_qp只是初始化，并未到达RTR, RTS状态（QP的状态）
@@ -89,9 +152,7 @@ private:
      * @return 0表示正常执行，-1表示出现异常
      */
     int initializeLocalRdmaResource();
-    /* 销毁RdmdaQueuePair中创建所有的资源 */
-    void destroy();
-    /* 
+    /**
      * 创建一个QP, type是IBV_QPT_RC
      * @return 0表示正常执行，-1表示出现异常
      */
@@ -107,6 +168,8 @@ public:
     RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size, 
             void *_shared_memory, const char *_device_name = "mlx5_0", uint32_t _rdma_port = 1);
     ~RdmaQueuePair();
+    /* 销毁RdmdaQueuePair中创建所有的资源 */
+    void Destroy();
     void*    GetLocalMemory();
     uint64_t GetLocalMemorySize();
     /* 在slot_idx的slot处赋值长度为size的send_content */
@@ -115,7 +178,7 @@ public:
     int PostSend(uint32_t imm_data, uint64_t slot_idx);
     /* 向RNIC发送一个recv wr */
     int PostReceive();
-    /* 
+    /** 
      * 从CQ中取出一个WC，非阻塞
      * @return 1: 成功取出 0：没有WC -1：出现异常
      */
@@ -130,7 +193,10 @@ public:
  */
 class RdmaClient {
 protected:
+    bool               use_shared_memory = false;
     uint32_t           node_num = 0;   /** 可以通过多少个node（发送器）向一个计算节点发送消息 */
+    uint64_t           slot_size = 0;
+    uint64_t           slot_num = 0;
     //用于发送任务请求
     RdmaQueuePair     **rdma_queue_pairs = nullptr;   /** node_num长度 */
     std::string remote_ip;    //连接远程服务器的ip
@@ -141,9 +207,28 @@ protected:
     std::thread *send_threads = nullptr; /** node_num长度 */
 
 protected:
-    void createRdmaQueuePairs() {}
-    int  connectSocket() { return 0; }
-    int  dataSyncwithSocket(int sock, int size, char *local_data, char *remote_data) {}
+    /** 
+     * shared_memroy为nullptr，表示QP不创建在共享内存上，否则就创建在共享内存上
+     * 不仅要创建QP，还要和对端的QP进行连接。
+     * @param shared_memory: 从shared_memory开始创建QPs
+     * @param end_memory: 从shared_memory到*end_memory创建好了对象，end_memory是输出参数
+     */
+    int createRdmaQueuePairs(void *shared_memory, void **end_memory = nullptr);
+    /** 
+     * 与对端的IP地址建立socket连接
+     * @return >0: socket  -1: 出现异常
+     */
+    int  connectSocket();
+    /** 
+     * @param compute_id: 本节点的节点号
+     * @param meta      : 本节点的QueuePairMeta信息
+     * @param remote_compute_id : 对端节点的节点号
+     * @param remote_meta       : 对端节点的QueuePairMeta信息
+     * @return  0: 成功  -1: 出现异常
+     * 交换信息的时候，要考虑到大小端转换的问题，虽然没有这一步也大概率没事。
+     */
+    int  dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
+            uint32_t &remote_compute_id, QueuePairMeta &remote_meta);
     // /** 发送线程执行的代码 */
     // void sendThreadFun();
  

@@ -1,6 +1,6 @@
 #include <strings.h>
 
-#include "myipc.h"
+#include "test/myipc.h"
 
 MySharedMemory::MySharedMemory(size_t size) {
   CreateSharedMemory(size);
