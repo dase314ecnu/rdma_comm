@@ -7,6 +7,7 @@
 #include <semaphore.h>
 #include <thread>
 #include <exception>
+#include <vector>
 
 #include "configuration.h"
 #include "test/test_shared_memory.h"
@@ -35,10 +36,10 @@ enum SlotState {
  */
 typedef struct ZSend {
     SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
-    uint32_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
-    uint32_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
-    uint32_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
-    uint32_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
+    uint64_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
+    uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
+    uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
+    uint64_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
     pthread_spinlock_t spinlock;     /** 使用自旋锁保护这个ZSend */
     
     ZSend() {}
@@ -172,6 +173,8 @@ public:
     void Destroy();
     void*    GetLocalMemory();
     uint64_t GetLocalMemorySize();
+    /* 得到ibv_comp_channel */
+    ibv_comp_channel  *GetChannel();
     /* 在slot_idx的slot处赋值长度为size的send_content */
     void SetSendContent(void *send_content, uint64_t size, uint64_t slot_idx);
     /* 将slot_idx处的slot发送给对端 */
@@ -179,10 +182,10 @@ public:
     /* 向RNIC发送一个recv wr */
     int PostReceive();
     /** 
-     * 从CQ中取出一个WC，非阻塞
+     * 从CQ中取出多个WC，非阻塞
      * @return 1: 成功取出 0：没有WC -1：出现异常
      */
-    int  PollCompletionFromCQ(struct ibv_wc *wc); 
+    int  PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs); 
     int ReadyToUseQP();
     void GetLocalQPMetaData(QueuePairMetaData &local_data);
     void SetRemoteQPMetaData(QueuePairMetaData &remote_data);
@@ -229,8 +232,6 @@ protected:
      */
     int  dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta);
-    // /** 发送线程执行的代码 */
-    // void sendThreadFun();
  
 public:
     /** 仅创建相关资源，不启动发送线程 */
@@ -242,22 +243,50 @@ public:
     RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void *_shared_memory);
     ~RdmaClient() {}
-    // /** 启动发送线程 */
-    // void Run(); 
-    // /** 发送消息，并等待响应
-    //  *    1. 选择一个slot来发送数据或者等待空闲的slot，将这个slot设置为SLOT_INPROGRESS
-    //  *    2. 在ZAwake上等待响应
-    //  *    3. RdmaClient的发送线程检测到响应后，通过ZAwake通知
-    //  *    4. 将这个slot设置为SLOT_IDLE
-    //  */
-    // void PostRequest(void *send_content, uint64_t size);
 };
 
 /** 
  * SharedCacheService中其他线程要发送消息，则通过CommonRdmaClient。
  */
 class CommonRdmaCient : public RdmaClient {
+private:
+    struct Args {
+        uint32_t node_idx = 0;
+        CommonRdmaCient *client = nullptr;
+    };
+    
+    /** 
+     * stop为true，表示要终止所有发送线程，发送线程要循环检查这个变量
+     */
+    volatile bool stop = false;
 
+protected:
+    pthread_t *send_threads = nullptr;   // node_num长度
+protected:
+    /** 
+     * 不断监听node_idx号的node，看是否有回复到来，并进行处理
+     */
+    void sendThreadFun(uint32_t node_idx);
+    static void *sendThreadFunEntry(void *arg);
+
+public:
+    ~CommonRdmaCient();
+    /** 
+     * 启动node_num个线程，分别监听每个node
+     * @return 0: 成功  -1: 出现异常
+     */
+    int Run();
+    /** 
+     * 将所有发送线程终止掉
+     */
+    void Stop();
+    /** 发送消息，并等待响应
+     *    1. 选择一个slot来发送数据或者等待空闲的slot，将这个slot设置为SLOT_INPROGRESS
+     *    2. 在ZAwake上等待响应
+     *    3. RdmaClient的发送线程检测到响应后，通过ZAwake通知
+     *    4. 将这个slot设置为SLOT_IDLE
+     */
+    int PostRequest(void *send_content, uint64_t size);
 };
 
 
@@ -269,11 +298,10 @@ class CommonRdmaCient : public RdmaClient {
  * 如果一个backend想要访问SharedRdmaClient，大致流程如下：
  *   1. backend在共享内存中查看对应的发送器是否有空闲的slot，并在这个slot中填充要发送的数据，
  *      将它设置为SLOT_INPROGRESS
- *   2. backend向统一处理信号的线程发送信号，并在对应slot的信号量上等待
- *   3. 信号处理线程遍历所有的sends来查看哪些发送线程需要被通知去发送，然后向对应的线程的listen_fd写一个字节
- *   4. SharedRdmaClient的发送线程从epoll返回，将这个slot发送出去
- *   5. 发送线程收到响应后，将对应的进程/线程唤醒。
- *   6. backend将这个slot设置为SLOT_IDLE
+ *   2. backend向对应的发送线程的listend_fd发送一个消息，并在对应slot的信号量上等待
+ *   3. SharedRdmaClient的发送线程从epoll返回，将这个slot发送出去
+ *   4. 发送线程收到响应后，将对应的进程/线程唤醒。
+ *   5. backend将这个slot设置为SLOT_IDLE
  * 以上逻辑在PostRequest()中实现
  * 
  * 由于这个类要创建在共享内存中，所以父类不应该有虚函数。
@@ -281,17 +309,28 @@ class CommonRdmaCient : public RdmaClient {
 class SharedRdmaClient : public RdmaClient {
     friend class TestSharedMemoryClass;
 private:
-    /** 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，说明某个slot中含有要发送的数据。*/
-    int       **listen_fd = nullptr;  /** node_num长度 */
+    struct Args {
+        uint32_t node_idx = 0;
+        SharedRdmaClient *client = nullptr;
+    };
     
-    // /** 默认的slot_size, slot_num, node_num */
-    // static const int kSlotSize = 64;
-    // static const int kSlotNum = 10;
-    // static const int kNodeNum = 5;
+    /** 
+     * stop为true，表示要终止所有发送线程，发送线程要循环检查这个变量
+     */
+    volatile bool stop = false;
 
-private:
+protected:
+    /** 
+     * 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，
+     * 说明某个slot中含有要发送的数据。
+     * */
+    int       **listen_fd = nullptr;     /* node_num长度 */
+    pthread_t  *send_threads = nullptr;  /* node_num长度 */
+
+protected:
     /** 发送线程执行的代码 */
-    void sendThreadFun();
+    void sendThreadFun(uint32_t node_idx);
+    static void *sendThreadFunEntry(void *arg);
 
 public:
     /** 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
@@ -299,15 +338,20 @@ public:
     SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
             std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void* _shared_memory);
-    /** 启动发送线程 */
-    void Run() {}
+    ~SharedRdmaClient();
+    /** 启动所有发送线程 */
+    int Run();
+    /** 终止所有发送线程 */
+    void Stop();
     /** 调用SharedRdmaClient的发送消息的接口 */
-    void PostRequest(void *send_content, uint64_t size) {}
+    int PostRequest(void *send_content, uint64_t size) {}
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
      */
-    static uint64_t GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, uint32_t _node_num) {
+    static uint64_t GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
+            uint32_t _node_num) 
+    {
         return 0;
     }
 };

@@ -24,7 +24,9 @@ void TestSharedMemoryClass::TestSharedMemory () {
   this->slot_size = 64;
   this->slot_num = 5;
   this->node_num = 5;
-  this->client = new (buffer)SharedRdmaClient(this->slot_size, this->slot_num, 
+  this->client = (SharedRdmaClient *)buffer;
+  buffer       += sizeof(SharedRdmaClient);
+  *(this->client) = SharedRdmaClient(this->slot_size, this->slot_num, 
       "", 0, this->node_num, buffer);
 
   // 开启node_num个线程进行监听
