@@ -1,3 +1,6 @@
+#ifndef INNER_SCOPE_H
+#define INNER_SCOPE_H
+
 template <typename FuncType>
 class InnerScopeExit
 {
@@ -16,3 +19,5 @@ InnerScopeExit<F> MakeScopeExit(F f) {
 #define DO_STRING_JOIN(arg1, arg2) arg1 ## arg2
 #define STRING_JOIN(arg1, arg2) DO_STRING_JOIN(arg1, arg2)
 #define SCOPEEXIT(code) auto STRING_JOIN(scope_exit_object_, __LINE__) = MakeScopeExit(code);
+
+#endif

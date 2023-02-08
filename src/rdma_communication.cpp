@@ -17,6 +17,7 @@
 #include "rdma_communication.h"
 #include "inner_scope.h"
 #include "waitset.h"
+#include "log.h"
 
 int RdmaQueuePair::initializeLocalRdmaResource() {
   struct ibv_device **device_list = nullptr;
@@ -228,6 +229,7 @@ RdmaQueuePair::RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size
 {
   // Initialize local memory for the QP to register in MR
   // it is allocated in shared memory
+  this->use_shared_memory = true;
   this->local_memory_size = this->local_slot_size * (this->local_slot_num + 1);
   this->local_memory = _shared_memory;
   
@@ -245,25 +247,32 @@ RdmaQueuePair::~RdmaQueuePair() {
 void RdmaQueuePair::Destroy() {
   if (this->qp != nullptr) {
     ibv_destroy_qp(this->qp);
+    this->qp = nullptr;
   }
   if (this->local_mr != nullptr) {
     ibv_dereg_mr(this->local_mr);
+    this->local_mr = nullptr;
   }
   if (this->pd != nullptr) {
     ibv_dealloc_pd(this->pd);
+    this->pd = nullptr;
   }
   if (this->cq != nullptr) {
     ibv_destroy_cq(this->cq);
+    this->cq = nullptr;
   }
   if (this->channel != nullptr) {
     ibv_destroy_comp_channel(this->channel);
+    this->channel = nullptr;
   }
   if (this->ctx != nullptr) {
     ibv_close_device(this->ctx);
+    this->ctx = nullptr;
   }
-  if (this->use_shared_memory == false) {
+  if (this->use_shared_memory == false && this->local_memory != nullptr) {
     free(this->local_memory);
   }
+  this->local_memory = nullptr;
 }
 
 void* RdmaQueuePair::GetLocalMemory() {
@@ -279,12 +288,12 @@ ibv_comp_channel* RdmaQueuePair::GetChannel() {
 }
 
 void RdmaQueuePair::SetSendContent(void *send_content, uint64_t size, uint64_t slot_idx) {
-  void *buf = this->local_memory + slot_idx * this->local_slot_size;
+  void *buf = (void *)((char *)this->local_memory + slot_idx * this->local_slot_size);
   memcpy(buf, send_content, size);
 }
 
 int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx) {
-  uintptr_t send_addr = (uintptr_t)(this->local_memory + slot_idx * this->local_slot_size);
+  uintptr_t send_addr = (uintptr_t)((char *)this->local_memory + slot_idx * this->local_slot_size);
   uintptr_t recv_addr = this->remote_memory + slot_idx * this->local_slot_size;
 
   struct ibv_sge sg;
@@ -444,7 +453,10 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
       }
     } else {
       this->rdma_queue_pairs[i] = (RdmaQueuePair *)scratch;
-      *(this->rdma_queue_pairs[i]) = RdmaQueuePair(this->slot_num, 
+      // *(this->rdma_queue_pairs[i]) = RdmaQueuePair(this->slot_num, 
+      //         this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
+      //         DEVICE_NAME, RDMA_PORT);
+      new (this->rdma_queue_pairs[i]) RdmaQueuePair(this->slot_num, 
               this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
               DEVICE_NAME, RDMA_PORT);
       scratch += (sizeof(RdmaQueuePair) + 
@@ -617,7 +629,7 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
 
 RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void *_shared_memory)
-            : remote_ip(_remote_ip), remote_port(_remote_port), node_num(_node_num)
+            : slot_size{_slot_size}, slot_num{_slot_num}, remote_ip{_remote_ip}, remote_port{_remote_port}, node_num{_node_num}
 {
   int rc = 0;
   char *scratch = (char *)_shared_memory;
@@ -653,6 +665,10 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
 }
 
 RdmaClient::~RdmaClient() {
+  this->Destroy();
+}
+
+void RdmaClient::Destroy() {
   if (this->rdma_queue_pairs != nullptr) {
     for (int i = 0; i < this->node_num; ++i) {
       if (this->rdma_queue_pairs[i] != nullptr) {
@@ -661,31 +677,39 @@ RdmaClient::~RdmaClient() {
         } else {
           this->rdma_queue_pairs[i]->Destroy();
         }
+        this->rdma_queue_pairs[i] = nullptr;
       }
     }
     if (this->use_shared_memory == false) {
       delete[] this->rdma_queue_pairs;
     }
+    this->rdma_queue_pairs = nullptr;
   }
+
   if (this->sends != nullptr && this->use_shared_memory == false) {
     for (int i = 0; i < this->node_num; ++i) {
       if (this->sends[i].states != nullptr) {
         delete[] this->sends[i].states;
+        this->sends[i].states = nullptr;
       }
     }
     delete[] this->sends;
   }
+  this->sends = nullptr;
+
   if (this->awakes != nullptr && this->use_shared_memory == false) {
     for (int i = 0; i < this->node_num; ++i) {
       if (this->awakes[i].sems != nullptr) {
         for (int j = 0; j < this->slot_num + 1; ++i) {
-          sem_destroy(&(this->awakes[i].sems[j]));
+          (void) sem_destroy(&(this->awakes[i].sems[j]));
         }
         delete[] this->awakes[i].sems;
+        this->awakes[i].sems = nullptr;
       }
     }
     delete[] this->awakes;
   }
+  this->awakes = nullptr;
 }
 
 /**  
@@ -967,6 +991,8 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
             : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
                          _node_num, _shared_memory)
 {
+  LOG_DEBUG("Start to construct SharedRdmaClient\n");
+
   int i = 0;
   SCOPEEXIT([&]() {
     if (this->listen_fd == nullptr) {
@@ -977,14 +1003,20 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
         (void) close(this->listen_fd[j][0]);
         (void) close(this->listen_fd[j][1]);
         delete[] this->listen_fd[j];
+        this->listen_fd[j] = nullptr;
       }
       if (this->listen_fd[i] != nullptr) {
         delete[] this->listen_fd[i];
+        this->listen_fd[i] = nullptr;
       }
       delete[] this->listen_fd;
       this->listen_fd = nullptr;
     }
+
+    LOG_DEBUG("End to construct the SharedRdmaClient\n");
   });
+
+  this->use_shared_memory = true;
 
   this->listen_fd = new int*[_node_num];
   if (this->listen_fd == nullptr) {
@@ -1007,17 +1039,7 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
 }
 
 SharedRdmaClient::~SharedRdmaClient() {
-  this->Stop();
-
-  if (this->listen_fd != nullptr) {
-    for (int i = 0; i < this->node_num; ++i) {
-      (void) close(this->listen_fd[i][0]);
-      (void) close(this->listen_fd[i][1]);
-      delete[] this->listen_fd[i];
-    }
-    delete[] this->listen_fd;
-    this->listen_fd = nullptr;
-  }
+  this->Destroy();
 }
 
 int SharedRdmaClient::Run() {
@@ -1055,6 +1077,29 @@ void SharedRdmaClient::Stop() {
   }
   delete[] this->send_threads;
   this->send_threads = nullptr;
+}
+
+void SharedRdmaClient::Destroy() {
+  LOG_DEBUG("Start to destroy SharedRdmaClient\n");
+
+  this->Stop();
+
+  if (this->listen_fd != nullptr) {
+    for (int i = 0; i < this->node_num; ++i) {
+      if (this->listen_fd[i] != nullptr) {
+        (void) close(this->listen_fd[i][0]);
+        (void) close(this->listen_fd[i][1]);
+        delete[] this->listen_fd[i];
+        this->listen_fd[i] = nullptr;
+      }
+    }
+    delete[] this->listen_fd;
+    this->listen_fd = nullptr;
+  }
+
+  RdmaClient::Destroy();
+
+  LOG_DEBUG("End to destroy SharedRdmaClient");
 }
 
 int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {

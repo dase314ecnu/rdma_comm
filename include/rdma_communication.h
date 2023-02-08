@@ -237,12 +237,15 @@ public:
     /** 仅创建相关资源，不启动发送线程 */
     RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num);
-    /** 仅创建相关资源，不启动发送线程 
+    /** 
+     * 仅创建相关资源，不启动发送线程 
      * 注册内存需要在共享内存上
      */
     RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void *_shared_memory);
-    ~RdmaClient() {}
+    ~RdmaClient();
+    /** Destroy all the resources of RdmaClient */
+    void Destroy();
 };
 
 /** 
@@ -334,7 +337,7 @@ protected:
 
 public:
     /** 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
-     * RdmaClient.send_threads等拷贝到shared_memory共享内存中 */
+     * 等拷贝到shared_memory共享内存中 */
     SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
             std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void* _shared_memory);
@@ -343,8 +346,10 @@ public:
     int Run();
     /** 终止所有发送线程 */
     void Stop();
+    /** Destroy all the resources of the SharedRdmaClient */
+    void Destroy();
     /** 调用SharedRdmaClient的发送消息的接口 */
-    int PostRequest(void *send_content, uint64_t size) {}
+    int PostRequest(void *send_content, uint64_t size);
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。

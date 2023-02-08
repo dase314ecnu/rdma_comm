@@ -9,6 +9,7 @@
 
 #include "test/test_shared_memory.h"
 #include "waitset.h"
+#include "log.h"
 
 /** 
  * TestSharedMemoryWorker的参数
@@ -26,8 +27,10 @@ void TestSharedMemoryClass::TestSharedMemory () {
   this->node_num = 5;
   this->client = (SharedRdmaClient *)buffer;
   buffer       += sizeof(SharedRdmaClient);
-  *(this->client) = SharedRdmaClient(this->slot_size, this->slot_num, 
-      "", 0, this->node_num, buffer);
+  // *(this->client) = SharedRdmaClient(this->slot_size, this->slot_num, 
+  //     "", 0, this->node_num, buffer);
+  new (this->client)SharedRdmaClient(this->slot_size, this->slot_num,
+          "", 0, this->node_num, buffer);
 
   // 开启node_num个线程进行监听
   pthread_t *threads = new pthread_t[node_num];
@@ -67,13 +70,17 @@ void TestSharedMemoryClass::TestSharedMemory () {
     pthread_join(threads[i], nullptr);
   }
   
+  if (this->client != nullptr) {
+    this->client->Destroy();
+    this->client = nullptr;
+  }
   this->mem->DestroySharedMemory();
   std::cout << "TestSharedMemory: pass" << std::endl;
 }
 
 void TestSharedMemoryClass::Worker(uint32_t node_idx) {
   WaitSet waitset;
-  waitset.addFd(this->client->listen_fd[node_idx][1]);
+  (void) waitset.addFd(this->client->listen_fd[node_idx][1]);
 
   int remain = this->slot_num;
   while (remain > 0) {
