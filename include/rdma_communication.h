@@ -200,14 +200,17 @@ protected:
     uint32_t           node_num = 0;   /** 可以通过多少个node（发送器）向一个计算节点发送消息 */
     uint64_t           slot_size = 0;
     uint64_t           slot_num = 0;
-    //用于发送任务请求
-    RdmaQueuePair     **rdma_queue_pairs = nullptr;   /** node_num长度 */
+    /** 
+     * 用于发送任务请求和接收响应的QP。
+     * node_num长度
+     */
+    RdmaQueuePair     **rdma_queue_pairs = nullptr;
     std::string remote_ip;    //连接远程服务器的ip
     uint32_t    remote_port = 0;  //连接远程服务器的端口
-    ZSend      *sends = nullptr;        /** node_num长度 */
-    ZAwake     *awakes = nullptr;       /** node_num长度 */
+    ZSend      *sends = nullptr;        // node_num长度
+    ZAwake     *awakes = nullptr;       // node_num长度
 
-    std::thread *send_threads = nullptr; /** node_num长度 */
+    std::thread *send_threads = nullptr; // node_num长度
 
 protected:
     /** 
@@ -364,21 +367,64 @@ public:
 
 /** 
  * 负责接收来自己多个计算节点的消息，并分配工作线程来处理。
+ * 远程的RDMA Write的imm_data字段会保存slot的号，因此RdmaServer可以直接知道从哪个slot中读取消息
+ * @parma T: 业务处理逻辑的类
  */
+template<typename T>
 class RdmaServer {
-protected:
-    uint32_t           node_num;   /** 对应每个来连接的计算节点，分配node_num个接收器 */
-    //用于发送任务请求
-    RdmaQueuePair     *rdma_queue_pairs;   /** node_num长度 */
-    uint32_t    local_port;   /** 监听线程的监听端口 */
-
-    std::thread *receive_threads; /** node_num长度 */
-    std::thread  listen_thread;   /** 监听线程，用于处理来自其他计算节点的连接请求 */
+    template<typename T>
+    struct Args {
+        uint32_t node_idx = 0;  // 小于compute_num * node_num
+        RdmaServer<T> *server = nullptr;
+    };
 
 protected:
+    uint32_t           compute_num = 0;  // 计算机器的个数
+    uint32_t           node_num = 0;   // 对应每个来连接的计算节点，分配node_num个接收器
+    uint64_t           slot_size = 0;
+    uint64_t           slot_num = 0;
+    /** 
+     * 用于发送任务请求。
+     * compute_num * node_num长度。
+     */
+    RdmaQueuePair     **rdma_queue_pairs = nullptr; 
+    /** 
+     * locks[i]保护对rdma_queue_paris[i]的访问。
+     * 监听线程要随时初始化rdma_queue_pairs[i]，同时i号工作线程要检查并坚挺rdma_queue_pairs[i]，
+     * 因此需要锁的保护。
+     * compute_num * node_num长度
+     */
+    pthread_spinlock_t *locks = nullptr;
+    
+    uint32_t    local_port = 0;   // 监听线程的监听端口
+    std::thread **receive_threads = nullptr; // compute_num * node_num长度
+    std::thread  *listen_thread = nullptr;   // 监听线程，用于处理来自其他计算节点的连接请求
+
+protected:
+    /** 
+     * 不断监听local_port端口，看是否有连接请求到来，并进行处理
+     */
+    void listenThreadFun();
+    static void *listenThreadFunEntry(void *arg);
+    /** 
+     * 不断监听rdma_queue_pairs[i]，看是否有请求到来，并进行处理
+     */
+    void receiveThreadFun(uint32_t node_idx);
+    static void *receiveThreadFunEntry(void *arg);
 
 public:
-    
+    /** 
+     * 初始化各个类成员属性。
+     * 为rdma_queue_pairs和receive_threads分配内存空间。
+     * 初始化locks
+     */
+    RdmaServer(uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, uint32_t _port);
+    /** 
+     * 开启一个监听线程和多个接收线程, 监听线程接收到RdmaClient的连接请求后，
+     * 就可以初始化rdma_queue_pairs[i]，然后i号接收线程就可以直接从rdma_queue_pairs[i]
+     * 中监听请求了。
+     */
+    int Run();
 };
 
 

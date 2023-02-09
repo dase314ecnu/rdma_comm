@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <vector>
+#include <map>
 
 #include "rdma_communication.h"
 #include "inner_scope.h"
@@ -1141,6 +1142,82 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
   }
 }
 
+/** 
+ * ---------------------------------------------------------------------------------------------
+ * RdmaServer 实现
+ * ----------------------------------------------------------------------------------------------
+ */
+
+template<typename T>
+void RdmaServer<T>::listenThreadFun() {
+  std::map<int, int> comp_counter;  // 记录每个机器已经到来的连接数
+  for (int = 0; i <this->compute_num; ++i) {
+    comp_counter[i] = 0;
+  }
+  /** @todo */
+}
+
+template<typename T>
+void* RdmaServer<T>::listenThreadFunEntry(void *arg) {
+  Args<T> *args = (Args<T> *)arg;
+  args->server->listenThreadFun();
+  delete args;
+  return nullptr;
+}
+
+template<typename T>
+void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
+
+}
+
+template<typename T>
+void* RdmaServer<T>::receiveThreadFunEntry(void *arg) {
+  Args<T> *args = (Args<T> *)arg;
+  args->server->receiveThreadFun(args->node_idx);
+  delete args;
+  return nullptr;
+}
+
+
+template<typename T>
+RdmaServer<T>::RdmaServer(uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, uint32_t _port) 
+        : node_num(_node_num), slot_size(_slot_size), slot_num(_slot_size), local_port(_port)
+{
+  int cnt = this->compute_num * this->node_num;
+  this->rdma_queue_pairs = new RdmaQueuePair*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->rdma_queue_pairs[i] = nullptr;
+  }
+  this->locks = new pthread_spinlock_t[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    if (pthread_spin_init(&(this->locks[i]), 0) != 0) {
+      throw std::bad_exception();
+    }
+  }
+  
+  // Args<T> *arg_listen = new Args<T>();
+  // arg_listen->server = this;
+  // try {
+  //   this->listen_thread = new std::thread(RdmaServer<T>::listenThreadFunEntry, arg_listen);
+  // } catch (...) {
+  //   throw std::bad_exception();
+  // }
+
+  this->receive_threads = new std::thread*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->receive_threads[i] = nullptr;
+  }
+  // for (int i = 0; i < cnt; ++i) {
+  //   Args<T> *arg_receive = new Args<T>();
+  //   arg_receive->node_idx = i;
+  //   arg_receive->server = this;
+  //   try {
+  //     this->receive_threads[i] = new std::thread(RdmaServer<T>::receiveThreadFunEntry, arg_receive);
+  //   } catch (...) {
+  //     throw std::bad_exception();
+  //   }
+  // }
+}
 
 // 1. void*和uintptr_t之间的转换
 // 2. 批量发送slot中的数据与批量处理slot中的数据
