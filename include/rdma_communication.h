@@ -368,11 +368,12 @@ public:
 /** 
  * 负责接收来自己多个计算节点的消息，并分配工作线程来处理。
  * 远程的RDMA Write的imm_data字段会保存slot的号，因此RdmaServer可以直接知道从哪个slot中读取消息
- * @parma T: 业务处理逻辑的类
+ * @parma T: 业务处理线程池的实现
+ * 
+ * @todo: RdmaServer要聚合T, T中要聚合RdmaClient和RdmaServer. T含有Start()接口，用于业务处理.
  */
 template<typename T>
 class RdmaServer {
-    template<typename T>
     struct Args {
         uint32_t node_idx = 0;  // 小于compute_num * node_num
         RdmaServer<T> *server = nullptr;
@@ -385,7 +386,8 @@ protected:
     uint64_t           slot_num = 0;
     /** 
      * 用于发送任务请求。
-     * compute_num * node_num长度。
+     * compute_num * node_num长度。rdma_queue_paris[i]负责和i / compute_num号机器
+     * 上的i % compute_num号node进行通信。
      */
     RdmaQueuePair     **rdma_queue_pairs = nullptr; 
     /** 
@@ -395,22 +397,41 @@ protected:
      * compute_num * node_num长度
      */
     pthread_spinlock_t *locks = nullptr;
+    /** 
+     * @todo: 需要考虑监听的计算节点，如果是[1, 2, 3]，则监听1, 2, 3号计算节点的连接请求
+     */
+    std::vector<uint32_t> consider_compute_list; 
     
     uint32_t    local_port = 0;   // 监听线程的监听端口
     std::thread **receive_threads = nullptr; // compute_num * node_num长度
     std::thread  *listen_thread = nullptr;   // 监听线程，用于处理来自其他计算节点的连接请求
 
+    T   *worker_threadpool = nullptr;   // 业务处理线程池
+
 protected:
     /** 
-     * 不断监听local_port端口，看是否有连接请求到来，并进行处理
+     * 不断监听local_port端口，看是否有连接请求到来，并进行处理。
+     * 第i个机器的第j个请求到来时，这第j个请求的远程node就被标记为j号node，
+     * 同时rdma_queue_pairs[i * compute_num + j]进行初始化，以负责和这个远程node通信。
      */
     void listenThreadFun();
     static void *listenThreadFunEntry(void *arg);
     /** 
-     * 不断监听rdma_queue_pairs[i]，看是否有请求到来，并进行处理
+     * 不断监听rdma_queue_pairs[i]，看是否有请求到来，并进行处理。
+     * @param node_idx: 小于compute_num * node_num
      */
     void receiveThreadFun(uint32_t node_idx);
     static void *receiveThreadFunEntry(void *arg);
+    /** 
+     * @param compute_id: 本节点的节点号
+     * @param meta      : 本节点的QueuePairMeta信息
+     * @param remote_compute_id : 对端节点的节点号
+     * @param remote_meta       : 对端节点的QueuePairMeta信息
+     * @return  0: 成功  -1: 出现异常
+     * 交换信息的时候，要考虑到大小端转换的问题，虽然没有这一步也大概率没事。
+     */
+    int  dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
+            uint32_t &remote_compute_id, QueuePairMeta &remote_meta);
 
 public:
     /** 
@@ -425,6 +446,14 @@ public:
      * 中监听请求了。
      */
     int Run();
+    /** 
+     * 向node_idx号node发送响应。
+     * PostResponse()不会与receiveThreadFun()冲突，这是因为RdmaClient和RdmaServer之间的协议：
+     * 服务器发送响应之后，客户端才可以释放对应node的锁，因此PostResponse()时，必定不会在同一个node
+     * 中到来消息，因此不用考虑并发的问题。
+     * @param node_idx: 小于compute_num * node_num
+     */
+    int PostResponse(uint64_t node_idx, uint64_t slot_idx);
 };
 
 
