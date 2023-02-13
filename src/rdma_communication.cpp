@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <vector>
 #include <map>
+#include <stdint.h>
 
 #include "rdma_communication.h"
 #include "inner_scope.h"
@@ -729,7 +730,7 @@ void RdmaClient::Destroy() {
  * CommonRdmaClient
  * ---------------------------------------------------------------------------------------
  */
-void CommonRdmaCient::sendThreadFun(uint32_t node_idx) {
+void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
   WaitSet *waitset = nullptr;
   int      rc      = 0;
   ZSend   *send    = &this->sends[node_idx];
@@ -797,17 +798,21 @@ void CommonRdmaCient::sendThreadFun(uint32_t node_idx) {
   }
 }
 
-void* CommonRdmaCient::sendThreadFunEntry(void *arg) {
+void* CommonRdmaClient::sendThreadFunEntry(void *arg) {
   Args *args = (Args *)arg;
   args->client->sendThreadFun(args->node_idx);
   return args;
 }
 
-CommonRdmaCient::~CommonRdmaCient() {
+CommonRdmaClient::CommonRdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
+            uint32_t _node_num)
+            : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, _node_num) {}
+
+CommonRdmaClient::~CommonRdmaClient() {
   this->Stop();
 }
 
-int CommonRdmaCient::Run() {
+int CommonRdmaClient::Run() {
   this->send_threads = new pthread_t[this->node_num];
   uint32_t i = 0;
   SCOPEEXIT([&]() {
@@ -821,7 +826,7 @@ int CommonRdmaCient::Run() {
     }
   });
 
-  for (; i < node_num; ++i) {
+  for (; i < this->node_num; ++i) {
     Args *args = new Args();
     args->client = this;
     args->node_idx = i;
@@ -832,7 +837,7 @@ int CommonRdmaCient::Run() {
   return 0;
 }
 
-void CommonRdmaCient::Stop() {
+void CommonRdmaClient::Stop() {
   this->stop = true;
   if (this->send_threads == nullptr) {
     return;
@@ -844,7 +849,7 @@ void CommonRdmaCient::Stop() {
   this->send_threads = nullptr;
 }
 
-int CommonRdmaCient::PostRequest(void *send_content, uint64_t size) {
+int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
   if (size > this->slot_size) {
     return -1;
   }
@@ -1375,8 +1380,10 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
  * @todo: 检查各个输入是否合法，比如_port
  */
 template<typename T>
-RdmaServer<T>::RdmaServer(uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, uint32_t _port) 
-        : node_num(_node_num), slot_size(_slot_size), slot_num(_slot_size), local_port(_port)
+RdmaServer<T>::RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
+        uint32_t _port, T *_worker_threadpool) 
+        : compute_num(_compute_num), node_num(_node_num), slot_size(_slot_size), slot_num(_slot_size), 
+          local_port(_port), worker_threadpool(_worker_threadpool)
 {
   int cnt = this->compute_num * this->node_num;
   this->rdma_queue_pairs = new RdmaQueuePair*[cnt];

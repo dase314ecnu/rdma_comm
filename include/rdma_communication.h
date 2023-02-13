@@ -8,6 +8,7 @@
 #include <thread>
 #include <exception>
 #include <vector>
+#include <stdint.h>
 
 #include "configuration.h"
 #include "test/test_shared_memory.h"
@@ -254,11 +255,11 @@ public:
 /** 
  * SharedCacheService中其他线程要发送消息，则通过CommonRdmaClient。
  */
-class CommonRdmaCient : public RdmaClient {
+class CommonRdmaClient : public RdmaClient {
 private:
     struct Args {
         uint32_t node_idx = 0;
-        CommonRdmaCient *client = nullptr;
+        CommonRdmaClient *client = nullptr;
     };
     
     /** 
@@ -276,7 +277,9 @@ protected:
     static void *sendThreadFunEntry(void *arg);
 
 public:
-    ~CommonRdmaCient();
+    CommonRdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
+            uint32_t _node_num);
+    ~CommonRdmaClient();
     /** 
      * 启动node_num个线程，分别监听每个node
      * @return 0: 成功  -1: 出现异常
@@ -397,10 +400,10 @@ protected:
      * compute_num * node_num长度
      */
     pthread_spinlock_t *locks = nullptr;
-    /** 
-     * @todo: 需要考虑监听的计算节点，如果是[1, 2, 3]，则监听1, 2, 3号计算节点的连接请求
-     */
-    std::vector<uint32_t> consider_compute_list; 
+    // /** 
+    //  * @todo: 需要考虑监听的计算节点，如果是[1, 2, 3]，则监听1, 2, 3号计算节点的连接请求
+    //  */
+    // std::vector<uint32_t> consider_compute_list; 
     
     uint32_t    local_port = 0;   // 监听线程的监听端口
     std::thread **receive_threads = nullptr; // compute_num * node_num长度
@@ -439,7 +442,8 @@ public:
      * 为rdma_queue_pairs和receive_threads分配内存空间。
      * 初始化locks
      */
-    RdmaServer(uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, uint32_t _port);
+    RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
+            uint32_t _port, T *_worker_threadpool);
     /** 
      * 开启一个监听线程和多个接收线程, 监听线程接收到RdmaClient的连接请求后，
      * 就可以初始化rdma_queue_pairs[i]，然后i号接收线程就可以直接从rdma_queue_pairs[i]
