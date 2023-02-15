@@ -588,7 +588,7 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
     }
   }
 
-  sscanf(recv_buf, "%08x%016lx%08x%08x%08x%04x", &compute_id, 
+  sscanf(recv_buf, "%08x%016lx%08x%08x%08x%04x", &remote_compute_id, 
           &remote_meta.registered_memory, &remote_meta.registered_key,
           &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
   compute_id = be32toh(compute_id);

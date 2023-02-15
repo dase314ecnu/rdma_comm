@@ -661,7 +661,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
   LOG_DEBUG("RdmaServer, compute id of %lld, Start to dataSyncWithSocket, remote socket is %d, "
-          "local_registered_memory=%lld, local_registered_key=%lld, local_qp_num=%lld"
+          "local_registered_memory=%lld, local_registered_key=%lld, local_qp_num=%lld, "
           "local_qp_psn=%lld, local_lid=%lld", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
 
@@ -707,7 +707,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   remote_meta.lid               = be16toh(remote_meta.lid);
 
   LOG_DEBUG("RdmaServer, compute id of %lld, received sync data, remote_compute_id=%lld, "
-          "remote_registered_memory=%lld, remote_registered_key=%lld, remote_qp_num=%lld"
+          "remote_registered_memory=%lld, remote_registered_key=%lld, remote_qp_num=%lld, "
           "remote_qp_psn=%lld, remote_lid=%lld", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   
