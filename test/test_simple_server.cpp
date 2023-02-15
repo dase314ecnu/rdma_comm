@@ -217,7 +217,7 @@ void TestSimpleServerClass::runServer()
         LOG_DEBUG("TestSimpleServer failed: failed to Run TestWorkerThreadpool");
     }
 
-    sleep(10);
+    sleep(1000);
 
 }
 
