@@ -226,7 +226,7 @@ void TestSimpleServerClass::runClient()
     uint32_t node_num = 2;
     uint32_t slot_size = 64;
     uint32_t slot_num = 5;
-    std::string remote_ip = ""; // @todo
+    std::string remote_ip = SERVER_IP; 
     int remote_port = 21001;
     CommonRdmaClient *rdma_client = nullptr;
 
