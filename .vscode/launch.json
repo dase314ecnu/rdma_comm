@@ -9,7 +9,7 @@
             "name": "shared_cache_service_test1",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/data/zhouhuahui/SharedCacheService/build/test1",
+            "program": "/data/zhouhuahui/SharedCacheService/build/test2",
             // "args": ["-N", "-r", "127.0.0.1:2982:2981", "-o", "__min_full_resource_pool_memory=268435456,memory_limit=8G,datafile_size=10G,enable_syslog_recycle=True,enable_syslog_wf=True,max_syslog_file_count=4,system_memory=4G,cpu_count=16", "-z", "zone1", "-p", "2981", "-P", "2982", "-n", "obcluster", "-c", "1", "-d", "/home/test/zhouhuahui/Github/oceanbase/build_debug/ob-advanced-data/store", "-i", "lo", "-l", "INFO"],
             "stopAtEntry": true,
             "cwd": "/data/zhouhuahui/SharedCacheService",

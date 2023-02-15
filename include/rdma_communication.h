@@ -9,10 +9,25 @@
 #include <exception>
 #include <vector>
 #include <stdint.h>
+#include <sys/socket.h>
+#include <assert.h>
+#include <cstring>
+#include <cstdlib>
+#include <ctime>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <errno.h>
+#include <map>
+#include <fcntl.h>
 
 #include "configuration.h"
 #include "test/test_shared_memory.h"
+#include "rdma_communication.h"
 #include "inner_scope.h"
+#include "waitset.h"
+#include "log.h"
 
 typedef struct QueuePairMeta
 {
@@ -400,16 +415,13 @@ protected:
      * compute_num * node_num长度
      */
     pthread_spinlock_t *locks = nullptr;
-    // /** 
-    //  * @todo: 需要考虑监听的计算节点，如果是[1, 2, 3]，则监听1, 2, 3号计算节点的连接请求
-    //  */
-    // std::vector<uint32_t> consider_compute_list; 
     
     uint32_t    local_port = 0;   // 监听线程的监听端口
     std::thread **receive_threads = nullptr; // compute_num * node_num长度
     std::thread  *listen_thread = nullptr;   // 监听线程，用于处理来自其他计算节点的连接请求
 
     T   *worker_threadpool = nullptr;   // 业务处理线程池
+    volatile bool stop = false;         // 线程是否停止接收请求
 
 protected:
     /** 
@@ -444,12 +456,17 @@ public:
      */
     RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
             uint32_t _port, T *_worker_threadpool);
+    ~RdmaServer();
     /** 
      * 开启一个监听线程和多个接收线程, 监听线程接收到RdmaClient的连接请求后，
      * 就可以初始化rdma_queue_pairs[i]，然后i号接收线程就可以直接从rdma_queue_pairs[i]
      * 中监听请求了。
      */
     int Run();
+    /** 
+     * 终止所有线程
+     */
+    void Stop();
     /** 
      * 向node_idx号node发送响应。
      * PostResponse()不会与receiveThreadFun()冲突，这是因为RdmaClient和RdmaServer之间的协议：
@@ -459,6 +476,389 @@ public:
      */
     int PostResponse(uint64_t node_idx, uint64_t slot_idx);
 };
+
+/** 
+ * ---------------------------------------------------------------------------------------------
+ * RdmaServer 实现
+ * ----------------------------------------------------------------------------------------------
+ */
+
+template<typename T>
+void RdmaServer<T>::listenThreadFun() {
+  std::map<int, int> comp_counter;  // 记录每个机器已经到来的连接数
+  for (int i = 0; i <this->compute_num; ++i) {
+    comp_counter[i] = 0;
+  }
+  int rc;
+  int sock;
+  struct sockaddr_in my_address;
+  int on = 1;
+  int flags;
+
+  memset(&my_address, 0, sizeof(my_address));
+  my_address.sin_family      = AF_INET;
+  my_address.sin_addr.s_addr = htonl(INADDR_ANY);
+  my_address.sin_port        = htons(this->local_port);
+
+  assert((sock = socket(PF_INET, SOCK_STREAM, IPPROTO_IP)) >= 0);
+  assert(setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) >= 0);
+  flags = fcntl(sock, F_GETFL, 0);
+  fcntl(sock , F_SETFL , flags | O_NONBLOCK);
+  assert(bind(sock, (struct sockaddr*)&my_address, sizeof(struct sockaddr)) >= 0);
+  assert(listen(sock, this->compute_num * this->node_num) >= 0);  // 最多只会有这么多个连接到来
+
+  LOG_DEBUG("RdmaServer listen thread, is listening connection, listen_port=%d", local_port);
+
+  // 开始接收连接
+  while (!this->stop) {
+    struct sockaddr_in client_address;
+    socklen_t client_addrlength = sizeof(client_address);
+    int connfd = accept(sock, (struct sockaddr*)&client_address, 
+                &client_addrlength);
+    if (connfd < 0 && errno != EWOULDBLOCK) {
+      LOG_DEBUG("RdmaServer listen thread, failed to accept, connect file descriptor is invalid");
+      return;
+    }
+    if (connfd < 0) {
+      usleep(1000 * 500);
+      continue;
+    }
+
+    // 初始化一个QP
+    RdmaQueuePair *qp = nullptr;
+    try {
+      qp = new RdmaQueuePair(this->slot_num, this->slot_size, DEVICE_NAME, RDMA_PORT);
+    } catch (...) {
+      LOG_DEBUG("RdmaServer listen thread, failed to new RdmaQueuPair(aka. create qp resource)");
+      return;
+    }
+
+    QueuePairMeta meta;
+    QueuePairMeta remote_meta;
+    uint32_t      compute_id = MY_COMPUTE_ID;
+    uint32_t      remote_compute_id;     
+    qp->GetLocalQPMetaData(meta);
+    rc = this->dataSyncWithSocket(connfd, compute_id, meta, remote_compute_id, 
+            remote_meta);
+    // 交换信息后，关闭连接
+    close(connfd);
+    connfd = 0;
+    if (rc != 0) {
+      LOG_DEBUG("RdmaServer listen thread, failed to dataSyncWith Socket");
+      return;
+    }
+
+    qp->SetRemoteQPMetaData(remote_meta);
+    // 准备进行Send/Receive操作
+    rc = qp->ReadyToUseQP();
+    if (rc != 0) {
+      LOG_DEBUG("RdmaServer listen thread, failed to make qp ready to send");
+      return;
+    }
+
+    // 赋值到this->rdma_queue_pairs[]
+    int idx = this->compute_num * remote_compute_id + comp_counter[remote_compute_id];
+    comp_counter[remote_compute_id]++;
+    pthread_spin_lock(&(this->locks[idx]));
+    this->rdma_queue_pairs[idx] = qp;
+    pthread_spin_unlock(&(this->locks[idx]));
+
+    LOG_DEBUG("RdmaServer listen thread, success to make qp ready to send, receive thread of %d"
+            "will handle the qp connection", idx);
+  }
+  
+  close(sock);
+}
+
+template<typename T>
+void* RdmaServer<T>::listenThreadFunEntry(void *arg) {
+  Args *args = (Args *)arg;
+  args->server->listenThreadFun();
+  return args;
+}
+
+// 这里node_idx
+template<typename T>
+void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
+  LOG_DEBUG("RdmaServer receive thread of %lld, start to wait rdma connection to be set", node_idx);
+
+  // 等待qp建立连接
+  while (!this->stop) {
+    pthread_spin_lock(&(this->locks[node_idx]));
+    if (this->rdma_queue_pairs[node_idx] == nullptr) {
+      pthread_spin_unlock(&(this->locks[node_idx]));
+      sleep(1);
+      continue;
+    }
+    pthread_spin_unlock(&(this->locks[node_idx]));
+    break;
+  }
+
+  if (this->stop) {
+    return;
+  }
+  
+  WaitSet *waitset = nullptr;
+  try {
+    waitset = new WaitSet();
+  } catch (...) {
+    return;
+  }
+  if (waitset->addFd(this->rdma_queue_pairs[node_idx]->GetChannel()->fd) != 0) {
+    LOG_DEBUG("RdmaServer receive thread of %lld, failed to add channel fd of %d to waitset", 
+            node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
+    return;
+  }
+
+  LOG_DEBUG("RdmaServer receive thread of %lld, success to add channel fd of %d to waitset"
+          ", start to wait for requests", node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
+  
+  // 循环等待消息到来，并交给处理线程池中进行处理
+  while (!this->stop) {
+    int rc;
+    epoll_event event;
+    rc = waitset->waitSetWait(&event);
+    if (rc < 0 && errno != EINTR) {
+      return;
+    }
+    if (rc <= 0) {
+      continue;
+    }
+
+    std::vector<struct ibv_wc> wcs;
+    rc = this->rdma_queue_pairs[node_idx]->PollCompletionsFromCQ(wcs);
+    if (rc < 0) {
+      return;
+    }
+
+    for (int i = 0; i < rc; ++i) {
+      struct ibv_wc &wc = wcs[i];
+      if (wc.status != IBV_WC_SUCCESS) {
+        return;
+      }
+
+      if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+        uint32_t  slot_idx = wc.imm_data;
+        char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
+                slot_idx * this->slot_size;
+        this->worker_threadpool->Start(buf, node_idx, slot_idx);
+      }
+    }
+  }
+
+  LOG_DEBUG("RdmaServer receive thread of %lld, stop working", node_idx);
+}
+
+template<typename T>
+void* RdmaServer<T>::receiveThreadFunEntry(void *arg) {
+  Args *args = (Args *)arg;
+  args->server->receiveThreadFun(args->node_idx);
+  return args;
+}
+
+template<typename T>
+int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
+            uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
+{
+  LOG_DEBUG("RdmaServer, compute id of %lld, Start to dataSyncWithSocket, remote socket is %d, "
+          "local_registered_memory=%lld, local_registered_key=%lld, local_qp_num=%lld"
+          "local_qp_psn=%lld, local_lid=%lld", compute_id, sock, meta.registered_memory, 
+          meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
+
+  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta);
+  char *send_buf  = nullptr;
+  char *recv_buf  = nullptr;
+  send_buf        = (char *)malloc(length);
+  recv_buf        = (char *)malloc(length);
+  char  *pointer  = send_buf;
+  int    rc       = 0;
+  size_t write_bytes = 0;
+  size_t read_bytes  = 0;
+
+  SCOPEEXIT([&]() {
+    if (send_buf != nullptr) {
+      free(send_buf);
+    }
+    if (recv_buf != nullptr) {
+      free(recv_buf);
+    }
+  });
+  
+  // 先接收
+  pointer = recv_buf;
+  while (read_bytes < length) {
+    rc = read(sock, pointer, length - read_bytes);
+    if (rc <= 0) {
+      return -1;
+    } else {
+      read_bytes += rc;
+      pointer    += rc;
+    }
+  }
+
+  sscanf(recv_buf, "%08x%016lx%08x%08x%08x%04x", &remote_compute_id, 
+          &remote_meta.registered_memory, &remote_meta.registered_key,
+          &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
+  remote_compute_id = be32toh(remote_compute_id);
+  remote_meta.registered_memory = be64toh(remote_meta.registered_memory);
+  remote_meta.registered_key    = be32toh(remote_meta.registered_key);
+  remote_meta.qp_num            = be32toh(remote_meta.qp_num);
+  remote_meta.qp_psn            = be32toh(remote_meta.qp_psn);
+  remote_meta.lid               = be16toh(remote_meta.lid);
+
+  LOG_DEBUG("RdmaServer, compute id of %lld, received sync data, remote_compute_id=%lld, "
+          "remote_registered_memory=%lld, remote_registered_key=%lld, remote_qp_num=%lld"
+          "remote_qp_psn=%lld, remote_lid=%lld", compute_id, remote_compute_id, remote_meta.registered_memory,
+          remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
+  
+  // 再发送
+  sprintf(pointer, "%08x", htobe32(compute_id));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%016lx", htobe64(meta.registered_memory));
+  pointer += sizeof(uintptr_t);
+  sprintf(pointer, "%08x", htobe32(meta.registered_key));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%08x", htobe32(meta.qp_num));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%08x", htobe32(meta.qp_psn));
+  pointer += sizeof(uint32_t);
+  sprintf(pointer, "%04x", htobe16(meta.lid));
+  pointer += sizeof(uint16_t);
+  
+  pointer = send_buf;
+  while (write_bytes < length) {
+    rc = write(sock, pointer, length);
+    if (rc <= 0) {
+      return -1;
+    } else {
+      write_bytes += rc;
+      pointer     += rc;
+    }
+  }
+
+  LOG_DEBUG("RdmaServer, compute id of %lld, success to dataSyncWithSocket, remote socket is %d, "
+          "remote compute_id is %lld", compute_id, sock, remote_compute_id);
+
+  return 0;
+}
+
+
+/** 
+ * @todo: 检查各个输入是否合法，比如_port
+ */
+template<typename T>
+RdmaServer<T>::RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
+        uint32_t _port, T *_worker_threadpool) 
+        : compute_num(_compute_num), node_num(_node_num), slot_size(_slot_size), slot_num(_slot_size), 
+          local_port(_port), worker_threadpool(_worker_threadpool)
+{
+  LOG_DEBUG("RdmaServer Start to construct RdmaServer");
+
+  int cnt = this->compute_num * this->node_num;
+  this->rdma_queue_pairs = new RdmaQueuePair*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->rdma_queue_pairs[i] = nullptr;
+  }
+  this->locks = new pthread_spinlock_t[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    if (pthread_spin_init(&(this->locks[i]), 0) != 0) {
+      throw std::bad_exception();
+    }
+  }
+
+  this->receive_threads = new std::thread*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->receive_threads[i] = nullptr;
+  }
+
+  LOG_DEBUG("RdmaServer Success to construct RdmaServer: compute_num=%lld, node_num=%lld, "
+          "slot_size=%lld, slot_num=%lld, listen_port=%d", this->compute_num, this->node_num,
+          this->slot_size, this->slot_num, this->local_port);
+}
+
+template<typename T>
+RdmaServer<T>::~RdmaServer() {
+  LOG_DEBUG("RdmaServer start to deconstruct");
+
+  this->Stop();
+  
+  if (this->rdma_queue_pairs != nullptr) {
+    for (int i = 0; i < this->compute_num * this->node_num; ++i) {
+      if (this->rdma_queue_pairs[i] != nullptr) {
+        delete this->rdma_queue_pairs[i];
+        this->rdma_queue_pairs[i] = nullptr;
+      }
+    }
+    delete[] this->rdma_queue_pairs;
+    this->rdma_queue_pairs = nullptr;
+
+    delete this->locks;
+    this->locks = nullptr;
+
+    LOG_DEBUG("RdmaServer success to deconstruct, all resources including RDMA have been released");
+  }
+}
+
+/** 
+ * @todo: 释放arg_listen等
+ */
+template<typename T>
+int RdmaServer<T>::Run() {
+  LOG_DEBUG("Start to run RdmaServer");
+
+  int cnt = this->compute_num * this->node_num;
+
+  Args *arg_listen = new Args();
+  arg_listen->server = this;
+  try {
+    this->listen_thread = new std::thread(RdmaServer<T>::listenThreadFunEntry, arg_listen);
+  } catch (...) {
+    return -1;
+  }
+
+  for (int i = 0; i < cnt; ++i) {
+    Args *arg_receive = new Args();
+    arg_receive->node_idx = i;
+    arg_receive->server = this;
+    try {
+      this->receive_threads[i] = new std::thread(RdmaServer<T>::receiveThreadFunEntry, arg_receive);
+    } catch (...) {
+      return -1;
+    }
+  }
+
+  LOG_DEBUG("Success to run RdmaServer: launched one listen_thread, %d receive_threads", cnt);
+
+  return 0;
+}
+
+template<typename T>
+void RdmaServer<T>::Stop() {
+  LOG_DEBUG("RdmaServer start to stop all threads");
+
+  this->stop = true;
+  this->listen_thread->join();
+  delete this->listen_thread;
+  this->listen_thread = nullptr;
+
+  for (int i = 0; i < this->compute_num * this->node_num; ++i)
+  {
+    this->receive_threads[i]->join();
+    delete this->receive_threads[i];
+    this->receive_threads[i] = nullptr;
+  }
+  delete[] this->receive_threads;
+  this->receive_threads = nullptr;
+
+  LOG_DEBUG("RdmaServer success to stop all threads");
+}
+
+template<typename T>
+int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx) {
+  RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
+  qp->SetSendContent((void *)0, 0, slot_idx);
+  return qp->PostSend(slot_idx, slot_idx);
+}
 
 
 #endif

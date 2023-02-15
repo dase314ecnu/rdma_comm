@@ -6,6 +6,7 @@
 #include "rdma_communication.h"
 #include "configuration.h"
 #include "log.h"
+#include "inner_scope.h"
 
 /**
  * ------------------------------------------------------------------------------------------
@@ -31,9 +32,9 @@ TestWorkerThreadpool::~TestWorkerThreadpool()
 
 void TestWorkerThreadpool::Start(void *request, uint32_t node_idx, uint32_t slot_idx)
 {
-    while (true)
+    while (!this->stop)
     {
-        pthread_spin_lock(&(this->msg_queue->lock));
+        (void) pthread_spin_lock(&(this->msg_queue->lock));
         if (this->msg_queue->queue.size() < this->msg_queue->max_msg_num)
         {
             Msg msg;
@@ -41,12 +42,12 @@ void TestWorkerThreadpool::Start(void *request, uint32_t node_idx, uint32_t slot
             msg.node_idx = node_idx;
             msg.slot_idx = slot_idx;
             this->msg_queue->queue.push_back(std::move(msg));
-            pthread_spin_unlock(&(this->msg_queue->lock));
+            (void) pthread_spin_unlock(&(this->msg_queue->lock));
             break;
         }
         else
         {
-            pthread_spin_unlock(&(this->msg_queue->lock));
+            (void) pthread_spin_unlock(&(this->msg_queue->lock));
             usleep(100);
             continue;
         }
@@ -58,32 +59,31 @@ void TestWorkerThreadpool::SetSimpleServer(RdmaServer<TestWorkerThreadpool> *ser
 }
 
 int TestWorkerThreadpool::Run() {
-//     this->send_threads = new pthread_t[this->node_num];
-//   uint32_t i = 0;
-//   SCOPEEXIT([&]() {
-//     if (i < this->node_num) {
-//       this->stop = true;
-//       for (int j = 0; j < i; ++j) {
-//         (void) pthread_join(this->send_threads[j], nullptr);
-//       }
-//       delete[] this->send_threads;
-//       this->send_threads = nullptr;
-//     }
-//   });
+    uint32_t i = 0;
+    SCOPEEXIT([&]() {
+        if (i < this->worker_num) {
+            this->stop = true;
+            for (int j = 0; j < i; ++j) {
+                (void) pthread_join(*this->worker_threads[j], nullptr);
+                delete this->worker_threads[j];
+                this->worker_threads[j] = nullptr;
+            }
+            delete[] this->worker_threads;
+            this->worker_threads = nullptr;
+        }
+    });
 
-//   for (; i < node_num; ++i) {
-//     Args *args = new Args();
-//     args->client = this;
-//     args->node_idx = i;
-//     if (pthread_create(send_threads + i, nullptr, this->sendThreadFunEntry, args) != 0) {
-//       return -1;
-//     }
-//   }
-//   return 0;
-    
-    for (int i = 0; i < this->worker_num; ++i) {
-        
+    for (i = 0; i < this->worker_num; ++i) {
+        Args *args = new Args();
+        args->test_worker_threadpool = this;
+        this->worker_threads[i] = new pthread_t();
+        if (pthread_create(this->worker_threads[i], nullptr, this->workerThreadFunEntry, args)
+                != 0)
+        {
+            return -1;
+        }
     }
+    return 0;
 }
 
 void TestWorkerThreadpool::Stop()
@@ -104,11 +104,38 @@ void TestWorkerThreadpool::Stop()
 }
 
 void TestWorkerThreadpool::workerThreadFun() {
-
+    while (!this->stop)
+    {
+        pthread_spin_lock(&(this->msg_queue->lock));
+        Msg msg;
+        bool find = false;
+        if (this->msg_queue->queue.size() > 0)
+        {
+            msg = std::move(this->msg_queue->queue.front());
+            this->msg_queue->queue.erase(msg_queue->queue.begin());
+            find = true;
+        }
+        pthread_spin_unlock(&(this->msg_queue->lock));
+        
+        if (find) {
+            char *buf = (char *)msg.request;
+            int length = msg.parseLength(buf);
+            buf += sizeof(int);
+            std::string content = msg.parseContent(buf);
+            LOG_DEBUG("TestWorkerThreadpool received msg length: %d, content: %s",
+                    length, content.c_str());
+            // 回复
+            if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx) != 0) {
+                break;
+            }
+        }
+    }
 }
 
 void *TestWorkerThreadpool::workerThreadFunEntry(void *arg) {
-
+    Args *args = (Args *)arg;
+    args->test_worker_threadpool->workerThreadFun();
+    return args;
 }
 
 /**
@@ -144,12 +171,13 @@ void TestSimpleServerClass::runServer()
 
     SCOPEEXIT([&]()
               {
+    if (simple_server != nullptr) {
+        delete simple_server;
+    } 
     if (worker_threadpool != nullptr) {
         delete worker_threadpool;
     }
-    if (simple_server != nullptr) {
-        delete simple_server;
-    } });
+    });
 
     worker_threadpool = new TestWorkerThreadpool(worker_num, max_msg_num);
     try
@@ -159,21 +187,24 @@ void TestSimpleServerClass::runServer()
     }
     catch (...)
     {
-        LOG_DEBUG("TestSimpleServer failed");
+        LOG_DEBUG("TestSimpleServer failed: failed to new RdmaServer<TestWorkerThreadpool>");
         return;
     }
     // 启动RdmaServer
     if (simple_server->Run() != 0)
     {
-        LOG_DEBUG("TestSimpleServer failed");
+        LOG_DEBUG("TestSimpleServer failed: failed to Run RdmaServer");
         return;
     }
 
     worker_threadpool->SetSimpleServer(simple_server);
     // 启动工作线程池
-    worker_threadpool->Run();
+    if (worker_threadpool->Run() != 0) {
+        LOG_DEBUG("TestSimpleServer failed: failed to Run TestWorkerThreadpool");
+    }
 
-    sleep(120);
+    sleep(10);
+
 }
 
 void TestSimpleServerClass::runClient()
@@ -189,7 +220,8 @@ void TestSimpleServerClass::runClient()
               {
     if (rdma_client != nullptr) {
         delete rdma_client;
-    } });
+    } 
+    });
 
     try
     {
@@ -197,10 +229,24 @@ void TestSimpleServerClass::runClient()
     }
     catch (...)
     {
+        LOG_DEBUG("TestSimpleServer failed");
         return;
     }
 
     // 发送消息
-    char send_buf[100] = "zhouhuahui";
-    rdma_client->PostRequest((void *)send_buf, strlen(send_buf) + 1);
+    char content[20] = "zhouhuahui";
+    int length = sizeof(int) + strlen(content) + 1;
+    char send_buf[100];
+    char *pointer = send_buf;
+    memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
+    pointer += length;
+    memcpy(pointer, content, strlen(content) + 1);
+    rdma_client->PostRequest((void *)send_buf, length + 1);
+
+    LOG_DEBUG("TestSimpleServer pass");
+}
+
+int main() {
+    TestSimpleServerClass test;
+    test.TestSimpleServer(true);
 }

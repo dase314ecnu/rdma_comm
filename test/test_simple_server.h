@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <vector>
+#include <cstring>
+#include <string>
 
 #include "rdma_communication.h"
 
@@ -27,9 +29,23 @@ class TestWorkerThreadpool {
   };
 
   struct Msg{
+    /** 
+     * 规定reqeust的协议是：
+     * length of 4bytes, string content of (length - 4)bytes
+     */
     void *request = nullptr;
     uint32_t node_idx = 0;
     uint32_t slot_idx = 0;
+    
+    static int parseLength(char *buf) {
+      int length;
+      char *c = reinterpret_cast<char *>(&length);
+      memcpy((void *)c, buf, sizeof(int));
+      return length;
+    }
+    static std::string parseContent(char *buf) {
+      return std::string(buf);
+    }
   };
 
   struct MsgQueue {
@@ -74,7 +90,7 @@ private:
   pthread_t **worker_threads = nullptr;  // 工作线程池
   uint32_t    worker_num = 0;            // 工作线程池的数量
   MsgQueue   *msg_queue = nullptr;       // 很多工作线程都要竞争的消息队列
-  bool        stop = false;              // 工作线程是否要停止工作
+  volatile bool    stop = false;              // 工作线程是否要停止工作
 };
 
 class TestSimpleServerClass {
