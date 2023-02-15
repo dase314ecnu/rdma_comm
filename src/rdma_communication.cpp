@@ -730,6 +730,8 @@ void RdmaClient::Destroy() {
  * ---------------------------------------------------------------------------------------
  */
 void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
+  LOG_DEBUG("CommonRdmaClient send thread of %lld, start to work", node_idx);
+
   WaitSet *waitset = nullptr;
   int      rc      = 0;
   ZSend   *send    = &this->sends[node_idx];
@@ -740,16 +742,19 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
     return;
   }
   SCOPEEXIT([&]() {
+    LOG_DEBUG("CommonRdmaClient send thread of %lld will retire", node_idx);
     if (waitset != nullptr) {
       delete waitset;
       waitset = nullptr;
-      this->stop = true;
     }
+    this->stop = true;
   });
   
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
   rc = waitset->addFd(qp->GetChannel()->fd);
   if (rc != 0) {
+    LOG_DEBUG("CommonRdmaClient send thread of %lld, failed to add channel fd of %d to waitset", 
+            node_idx, qp->GetChannel()->fd);
     return;
   }
 
@@ -812,6 +817,8 @@ CommonRdmaClient::~CommonRdmaClient() {
 }
 
 int CommonRdmaClient::Run() {
+  LOG_DEBUG("CommonRdmaClient start to run client");
+
   this->send_threads = new pthread_t[this->node_num];
   uint32_t i = 0;
   SCOPEEXIT([&]() {
@@ -833,10 +840,13 @@ int CommonRdmaClient::Run() {
       return -1;
     }
   }
+
+  LOG_DEBUG("CommonRdmaClient success to run client, launched %d send threads", this->node_num);
   return 0;
 }
 
 void CommonRdmaClient::Stop() {
+  LOG_DEBUG("CommonRdmaClient start to stop client")
   this->stop = true;
   if (this->send_threads == nullptr) {
     return;
@@ -846,6 +856,7 @@ void CommonRdmaClient::Stop() {
   }
   delete[] this->send_threads;
   this->send_threads = nullptr;
+  LOG_DEBUG("CommonRdmaClient success to stop client");
 }
 
 int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {

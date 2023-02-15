@@ -16,18 +16,22 @@
 TestWorkerThreadpool::TestWorkerThreadpool(uint32_t _worker_num, uint32_t _max_msg_num)
     : worker_num(_worker_num)
 {
+    LOG_DEBUG("TestWorkerThreadpool start to construct TestWorkerThreadpool");
     this->msg_queue = new MsgQueue(_max_msg_num);
     this->worker_threads = new pthread_t *[this->worker_num];
     for (int i = 0; i < this->worker_num; ++i)
     {
         this->worker_threads[i] = nullptr;
     }
+    LOG_DEBUG("TestWorkerThreadpool success to construct TestWorkerThreadpool");
 }
 
 TestWorkerThreadpool::~TestWorkerThreadpool()
 {
+    LOG_DEBUG("TestWorkerThreadpool start to deconstruct TestWorkerThreadpool");
     this->Stop();
     delete this->msg_queue;
+    LOG_DEBUG("TestWorkerThreadpool success to deconstruct TestWorkerThreadpool");
 }
 
 void TestWorkerThreadpool::Start(void *request, uint32_t node_idx, uint32_t slot_idx)
@@ -62,6 +66,7 @@ int TestWorkerThreadpool::Run() {
     uint32_t i = 0;
     SCOPEEXIT([&]() {
         if (i < this->worker_num) {
+            LOG_DEBUG("TestWorkerThreadpool failed to run server, start to release resources");
             this->stop = true;
             for (int j = 0; j < i; ++j) {
                 (void) pthread_join(*this->worker_threads[j], nullptr);
@@ -73,6 +78,8 @@ int TestWorkerThreadpool::Run() {
         }
     });
 
+    LOG_DEBUG("TestWorkerThreadpool start to run server");
+
     for (i = 0; i < this->worker_num; ++i) {
         Args *args = new Args();
         args->test_worker_threadpool = this;
@@ -83,11 +90,14 @@ int TestWorkerThreadpool::Run() {
             return -1;
         }
     }
+
+    LOG_DEBUG("TestWorkerThreadpool success to run server, launch %d worker threads", this->worker_num);
     return 0;
 }
 
 void TestWorkerThreadpool::Stop()
 {
+    LOG_DEBUG("TestWorkerThreadpool start to stop server");
     this->stop = true;
     if (this->worker_threads == nullptr)
     {
@@ -95,15 +105,17 @@ void TestWorkerThreadpool::Stop()
     }
     for (int i = 0; i < this->worker_num; ++i)
     {
-        (void)pthread_join(*this->worker_threads[i], nullptr);
+        (void) pthread_join(*this->worker_threads[i], nullptr);
         delete this->worker_threads[i];
         this->worker_threads[i] = nullptr;
     }
     delete[] this->worker_threads;
     this->worker_threads = nullptr;
+    LOG_DEBUG("TestWorkerThreadpool success to stop server");
 }
 
 void TestWorkerThreadpool::workerThreadFun() {
+    uint64_t req_cnt = 0;   // 接收的总请求的个数。
     while (!this->stop)
     {
         pthread_spin_lock(&(this->msg_queue->lock));
@@ -118,11 +130,12 @@ void TestWorkerThreadpool::workerThreadFun() {
         pthread_spin_unlock(&(this->msg_queue->lock));
         
         if (find) {
+            req_cnt++;
             char *buf = (char *)msg.request;
             int length = msg.parseLength(buf);
             buf += sizeof(int);
             std::string content = msg.parseContent(buf);
-            LOG_DEBUG("TestWorkerThreadpool received msg length: %d, content: %s",
+            LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d, content: %s",
                     length, content.c_str());
             // 回复
             if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx) != 0) {
@@ -130,6 +143,7 @@ void TestWorkerThreadpool::workerThreadFun() {
             }
         }
     }
+    LOG_DEBUG("TestWorkerThreadpool worker thread will retire, have processed %lld requests", req_cnt);
 }
 
 void *TestWorkerThreadpool::workerThreadFunEntry(void *arg) {
@@ -248,5 +262,5 @@ void TestSimpleServerClass::runClient()
 
 int main() {
     TestSimpleServerClass test;
-    test.TestSimpleServer(true);
+    test.TestSimpleServer(IS_SERVER);
 }

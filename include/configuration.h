@@ -8,4 +8,7 @@
 // 总的计算节点个数，每个计算节点的编号是0, 1 ... TOTAL_COMPUTE_NUM-1
 #define TOTAL_COMPUTE_NUM (2)
 
+// for test
+#define IS_SERVER (1)   // 是否是RdmaServer
+
 #endif
