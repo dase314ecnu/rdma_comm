@@ -846,7 +846,7 @@ int CommonRdmaClient::Run() {
 }
 
 void CommonRdmaClient::Stop() {
-  LOG_DEBUG("CommonRdmaClient start to stop client")
+  LOG_DEBUG("CommonRdmaClient start to stop client");
   this->stop = true;
   if (this->send_threads == nullptr) {
     return;
