@@ -253,9 +253,9 @@ void TestSimpleServerClass::runClient()
     char send_buf[100];
     char *pointer = send_buf;
     memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-    pointer += length;
+    pointer += sizeof(int);
     memcpy(pointer, content, strlen(content) + 1);
-    rdma_client->PostRequest((void *)send_buf, length + 1);
+    rdma_client->PostRequest((void *)send_buf, length);
 
     LOG_DEBUG("TestSimpleServer pass");
 }
