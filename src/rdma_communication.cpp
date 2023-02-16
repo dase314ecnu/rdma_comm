@@ -723,12 +723,9 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   }
 
   {
-    ZSend *sends2 = new ZSend[this->node_num];
-    if (sends2 = nullptr) {
-      throw std::bad_exception();
-    }
-    for (int i = 0; i < this->node_num; ++i) {
-      ZSend tmp = ZSend(nullptr, this->slot_num);
+    ZSend2 *sends2 = new ZSend2[5];
+    for (int i = 0; i < 5; ++i) {
+      ZSend2 tmp = ZSend2(nullptr, 5);
       sends2[i] = tmp;
     }
   }
