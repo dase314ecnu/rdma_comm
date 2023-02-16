@@ -706,9 +706,9 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   remote_meta.qp_psn            = be32toh(remote_meta.qp_psn);
   remote_meta.lid               = be16toh(remote_meta.lid);
 
-  LOG_DEBUG("RdmaServer, compute id of %ld, received sync data, remote_compute_id=%ld, "
-          "remote_registered_memory=%llu, remote_registered_key=%ld, remote_qp_num=%ld, "
-          "remote_qp_psn=%ld, remote_lid=%d", compute_id, remote_compute_id, remote_meta.registered_memory,
+  LOG_DEBUG("RdmaServer, compute id of %u, received sync data, remote_compute_id=%u, "
+          "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
+          "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   
   // 再发送
