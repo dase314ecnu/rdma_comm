@@ -45,16 +45,6 @@ enum SlotState {
     SLOT_OTHER
 };
 
-// test
-typedef struct ZSend2 {
-    SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
-    uint64_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
-    uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
-    uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
-    uint64_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
-    pthread_spinlock_t *spinlock = nullptr;     /** 使用自旋锁保护这个ZSend @todo */
-} ZSend2;
-
 /** 
  * 当没有slot可以用时，空转轮询，而不是用条件变量等待。
  * 因为我们有个假设：slot都不可用的概率很小。如果使用条件变量，则我们
@@ -101,6 +91,19 @@ typedef struct ZSend {
         for (int i = 0; i < _slot_num + 1; ++i) {
             this->states[i] = SlotState::SLOT_IDLE;
         }
+    }
+
+    ZSend& operator=(const ZSend &other) {
+      if (this == &other) {
+        return *this;
+      }
+      this->states = other.states;
+      this->front = other.front;
+      this->notsent_front = other.front;
+      this->notsent_rear = other.notsent_rear;
+      this->rear = other.rear;
+      this->spinlock = other.spinlock;
+      return *this;
     }
 } ZSend;
 
