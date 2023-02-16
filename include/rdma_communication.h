@@ -665,7 +665,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
           "local_qp_psn=%lu, local_lid=%d", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
   
-  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta) - sizeof(ibv_gid) + 6; // 6个分隔符
+  size_t length = 26 + 6 + 1; // 6个分隔符, 1个结束符
   char *send_buf  = nullptr;
   char *recv_buf  = nullptr;
   send_buf        = (char *)malloc(length);

@@ -534,7 +534,7 @@ int RdmaClient::connectSocket() {
 int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
-  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta) - sizeof(ibv_gid) + 6; // 6个分隔符
+  size_t length = 26 + 6 + 1; // 6个分隔符, 1个结束符
   char *send_buf  = nullptr;
   char *recv_buf  = nullptr;
   send_buf        = (char *)malloc(length);
