@@ -727,8 +727,7 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
     throw std::bad_exception();
   }
   for (int i = 0; i < this->node_num; ++i) {
-    // this->sends[i] = std::move(ZSend(nullptr, this->slot_num));
-    pthread_spin_init(&this->sends[i].spinlock, 0);
+    this->sends[i] = ZSend(nullptr, this->slot_num);
   }
 
   this->awakes = new ZAwake[this->node_num];
@@ -765,9 +764,8 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   scratch += sizeof(ZSend) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
     try {
-      // @todo: use new to construct
       this->sends[i] = ZSend(scratch, this->slot_num);
-      scratch += sizeof(SlotState) * (this->slot_num + 1);
+      scratch += sizeof(SlotState) * (this->slot_num + 1) + sizeof(pthread_spinlock_t);
     } catch (...) {
       throw std::bad_exception();
     }
@@ -812,6 +810,11 @@ void RdmaClient::Destroy() {
       if (this->sends[i].states != nullptr) {
         delete[] this->sends[i].states;
         this->sends[i].states = nullptr;
+      }
+      if (this->sends[i].spinlock != nullptr) {
+        (void) pthread_spin_destroy(this->sends[i].spinlock);
+        delete this->sends[i].spinlock;
+        this->sends[i].spinlock = nullptr;
       }
     }
     delete[] this->sends;
@@ -892,7 +895,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         // 接收到回复
         uint64_t slot_idx = wc.imm_data;
         (void) sem_post(&(awake->sems[slot_idx]));
-        (void) pthread_spin_lock(&(send->spinlock));
+        (void) pthread_spin_lock(send->spinlock);
         if (slot_idx == send->front) {
           send->states[slot_idx] = SlotState::SLOT_IDLE;
           uint64_t p = slot_idx;
@@ -902,10 +905,10 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           send->front = p;
         }
         if (qp->PostReceive() != 0) {
-          (void) pthread_spin_unlock(&(send->spinlock));
+          (void) pthread_spin_unlock(send->spinlock);
           return;
         }
-        (void) pthread_spin_unlock(&(send->spinlock));
+        (void) pthread_spin_unlock(send->spinlock);
       }
     }
   }
@@ -977,16 +980,16 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       ZSend  *send = &this->sends[i];
       ZAwake *awake = &this->awakes[i];
       uint64_t rear = 0;
-      (void) pthread_spin_lock(&send->spinlock);
+      (void) pthread_spin_lock(send->spinlock);
       uint64_t rear2 = (send->rear + 1) % (this->slot_num + 1);
       if (rear2 == send->front) {
-        (void) pthread_spin_unlock(&send->spinlock);
+        (void) pthread_spin_unlock(send->spinlock);
         continue;
       }
       rear                = send->rear;
       send->states[rear] = SlotState::SLOT_INPROGRESS;
       send->rear          = rear2;
-      (void) pthread_spin_unlock(&send->spinlock);
+      (void) pthread_spin_unlock(send->spinlock);
       
       char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
               + rear * this->slot_size;
@@ -1062,7 +1065,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
           (void) sem_post(&(awake->sems[slot_idx]));
-          (void) pthread_spin_lock(&(send->spinlock));
+          (void) pthread_spin_lock(send->spinlock);
           if (slot_idx == send->front) {
             send->states[slot_idx] = SlotState::SLOT_IDLE;
             uint64_t p = slot_idx;
@@ -1074,10 +1077,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->front = p;
           }
           if (qp->PostReceive() != 0) {
-            (void) pthread_spin_unlock(&(send->spinlock));
+            (void) pthread_spin_unlock(send->spinlock);
             return;
           }
-          (void) pthread_spin_unlock(&(send->spinlock));
+          (void) pthread_spin_unlock(send->spinlock);
         }
       }
     } else if (event.data.fd == this->listen_fd[node_idx][1]) {
@@ -1096,7 +1099,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
       }
 
-      (void) pthread_spin_lock(&(send->spinlock));
+      (void) pthread_spin_lock(send->spinlock);
       uint64_t slot_idx = send->notsent_front;
       while (slot_idx != send->notsent_rear) {
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
@@ -1106,7 +1109,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         slot_idx = (slot_idx + 1) % (this->slot_num + 1);
       }
       send->notsent_front = send->notsent_rear;
-      (void) pthread_spin_unlock(&(send->spinlock));
+      (void) pthread_spin_unlock(send->spinlock);
 
     } else {
       /* can not reach here */
@@ -1250,10 +1253,10 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
       ZSend  *zsend = &this->sends[i];
       ZAwake *zawake = &this->awakes[i];
       uint64_t rear = 0;
-      (void) pthread_spin_lock(&zsend->spinlock);
+      (void) pthread_spin_lock(zsend->spinlock);
       uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
       if (rear2 == zsend->front) {
-        (void) pthread_spin_unlock(&zsend->spinlock);
+        (void) pthread_spin_unlock(zsend->spinlock);
         continue;
       }
       rear                = zsend->rear;
@@ -1264,7 +1267,7 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
       char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
               + rear * this->slot_size;
       memcpy(buf, send_content, size);
-      (void) pthread_spin_unlock(&zsend->spinlock);
+      (void) pthread_spin_unlock(zsend->spinlock);
       
       rc = send(this->listen_fd[i][0], &c, 1, 0); 
       if (rc <= 0) {

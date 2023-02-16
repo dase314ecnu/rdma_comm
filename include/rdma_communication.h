@@ -56,7 +56,7 @@ typedef struct ZSend {
     uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
     uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
     uint64_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
-    pthread_spinlock_t spinlock;     /** 使用自旋锁保护这个ZSend */
+    pthread_spinlock_t *spinlock = nullptr;     /** 使用自旋锁保护这个ZSend @todo */
     
     ZSend() {}
     /** 
@@ -65,13 +65,22 @@ typedef struct ZSend {
      */
     ZSend(void *_shared_memory, uint64_t _slot_num) {
         int shared = (_shared_memory == nullptr ? 0 : 1);
+        char *scratch = nullptr;
+        if (shared != 0) {
+          scratch = (char *)_shared_memory;
+        }
         // 初始化spinlock
-        if (pthread_spin_init(&this->spinlock, shared) != 0) {
+        if (shared != 0) {
+          this->spinlock = (pthread_spinlock_t *)(scratch);
+          scratch += sizeof(pthread_spinlock_t);
+        } else {
+          this->spinlock = new pthread_spinlock_t();
+        }
+        if (pthread_spin_init(this->spinlock, shared) != 0) {
             throw std::bad_exception();
         }
         // 给this->states分配空间并初始化
         if (shared != 0) {
-            char *scratch = (char *)_shared_memory;
             this->states  = (SlotState *)scratch;
         } else {
             this->states = new SlotState[_slot_num + 1];
