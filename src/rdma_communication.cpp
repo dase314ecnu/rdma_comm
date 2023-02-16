@@ -147,7 +147,7 @@ int RdmaQueuePair::modifyQPtoInit() {
   if (rc != 0) {
     return -1;
   }
-  return 1;
+  return 0;
 }
 
 int RdmaQueuePair::modifyQPtoRTR() {
@@ -714,8 +714,9 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
             : remote_ip(_remote_ip), remote_port(_remote_port), node_num(_node_num), 
               slot_size(_slot_size), slot_num(_slot_num)
 {
-  int rc = 0;
+  LOG_DEBUG("RdmaClient start to construct RdmaClient");
 
+  int rc = 0;
   rc = this->createRdmaQueuePairs(nullptr);
   if (rc != 0) {
     throw std::bad_exception();
@@ -744,6 +745,8 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
       throw std::bad_exception();
     }
   }
+
+  LOG_DEBUG("RdmaClient success to construct RdmaClient");
 }
 
 RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
