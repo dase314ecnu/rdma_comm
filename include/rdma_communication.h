@@ -97,7 +97,7 @@ typedef struct ZSend {
       if (this == &other) {
         return *this;
       }
-      this->states = other.states;
+      // this->states = other.states;
       this->front = other.front;
       this->notsent_front = other.front;
       this->notsent_rear = other.notsent_rear;
