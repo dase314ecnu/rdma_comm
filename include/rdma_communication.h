@@ -660,9 +660,9 @@ template<typename T>
 int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
-  LOG_DEBUG("RdmaServer, compute id of %ld, Start to dataSyncWithSocket, remote socket is %d, "
-          "local_registered_memory=%llu, local_registered_key=%ld, local_qp_num=%ld, "
-          "local_qp_psn=%ld, local_lid=%d", compute_id, sock, meta.registered_memory, 
+  LOG_DEBUG("RdmaServer, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
+          "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
+          "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
   
   size_t length = 26 + 6 + 1; // 6个分隔符, 1个结束符
