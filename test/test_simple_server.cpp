@@ -243,7 +243,7 @@ void TestSimpleServerClass::runClient()
     }
     catch (...)
     {
-        LOG_DEBUG("TestSimpleServer failed");
+        LOG_DEBUG("TestSimpleServer failed, failed to new CommonRdmaClient");
         return;
     }
 

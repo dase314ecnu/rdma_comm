@@ -388,17 +388,21 @@ int RdmaQueuePair::PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs) {
 
 int RdmaQueuePair::ReadyToUseQP() {
   if (this->modifyQPtoInit() != 0) {
+    LOG_DEBUG("RdmaQueuePair failed to modify qp to init");
     return -1;
   }
   for (int i = 0; i < this->local_slot_num; ++i) {
     if (this->PostReceive() != 0) {
+      LOG_DEBUG("RdmaQueuePair failed to post %d receives in qp", i);
       return -1;
     }
   }
   if (this->modifyQPtoRTR() != 0) {
+    LOG_DEBUG("RdmaQueuePair failed to modify qp to RTR");
     return -1;
   }
   if (this->modifyQPtoRTS() != 0) {
+    LOG_DEBUG("RdmaQueuePair failed to modify qp to RTS");
     return -1;
   }
   return 0;
@@ -455,18 +459,17 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
         this->rdma_queue_pairs[i] = new RdmaQueuePair(this->slot_num, this->slot_size, 
               DEVICE_NAME, RDMA_PORT);
       } catch (...) {
+        LOG_DEBUG("RdmaQueuePair failed to new %d RdmaQueuePair", i);
         return -1;
       }
     } else {
       this->rdma_queue_pairs[i] = (RdmaQueuePair *)scratch;
-      // *(this->rdma_queue_pairs[i]) = RdmaQueuePair(this->slot_num, 
-      //         this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
-      //         DEVICE_NAME, RDMA_PORT);
       try {
         new (this->rdma_queue_pairs[i]) RdmaQueuePair(this->slot_num, 
               this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
               DEVICE_NAME, RDMA_PORT);
       } catch (...) {
+        LOG_DEBUG("RdmaQueuePair failed to new %d RdmaQueuePair in shared memory", i);
         return -1;
       }
       scratch += (sizeof(RdmaQueuePair) + 
@@ -492,9 +495,10 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
     this->rdma_queue_pairs[i]->GetLocalQPMetaData(meta);
     rc = this->dataSyncWithSocket(sock, compute_id, meta, remote_compute_id, 
             remote_meta);
-    close(sock);
+    (void) close(sock);
     sock = 0;
     if (rc != 0) {
+      LOG_DEBUG("RdmaClient failed to dataSyncWith RdmaServer");
       return -1;
     }
     this->rdma_queue_pairs[i]->SetRemoteQPMetaData(remote_meta);
@@ -502,6 +506,7 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
     // 准备进行Send/Receive操作
     rc = this->rdma_queue_pairs[i]->ReadyToUseQP();
     if (rc != 0) {
+      LOG_DEBUG("RdmaClient failed to make %d qp ready to send", i);
       return -1;
     }
   }
