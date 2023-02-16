@@ -676,12 +676,12 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   size_t read_bytes  = 0;
 
   SCOPEEXIT([&]() {
-    // if (send_buf != nullptr) {
-    //   free(send_buf);
-    // }
-    // if (recv_buf != nullptr) {
-    //   free(recv_buf);
-    // }
+    if (send_buf != nullptr) {
+      free(send_buf);
+    }
+    if (recv_buf != nullptr) {
+      free(recv_buf);
+    }
   });
   
   // 先接收
@@ -712,6 +712,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   
   // 再发送
+  pointer = send_buf;
   sprintf(pointer, "%08x:", htobe32(compute_id));
   pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));

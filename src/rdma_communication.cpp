@@ -557,7 +557,8 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
           "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
           "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
-
+  
+  pointer = send_buf;
   sprintf(pointer, "%08x:", htobe32(compute_id));
   pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));
