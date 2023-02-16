@@ -534,7 +534,67 @@ int RdmaClient::connectSocket() {
 int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
-  size_t length = 26 + 6 + 1; // 6个分隔符, 1个结束符
+  // size_t length = 26 + 6 + 1; // 6个分隔符, 1个结束符
+  // char *send_buf  = nullptr;
+  // char *recv_buf  = nullptr;
+  // send_buf        = (char *)malloc(length);
+  // recv_buf        = (char *)malloc(length);
+  // char  *pointer  = send_buf;
+  // int    rc       = 0;
+  // size_t write_bytes = 0;
+  // size_t read_bytes  = 0;
+
+  // SCOPEEXIT([&]() {
+  //   if (send_buf != nullptr) {
+  //     free(send_buf);
+  //   }
+  //   if (recv_buf != nullptr) {
+  //     free(recv_buf);
+  //   }
+  // });
+
+  // LOG_DEBUG("RdmaClient, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
+  //         "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
+  //         "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
+  //         meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
+  
+  // sprintf(send_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", compute_id, meta.registered_memory, 
+  //         meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
+  
+  // pointer = send_buf;
+  // while (write_bytes < length) {
+  //   rc = write(sock, pointer, length);
+  //   if (rc <= 0) {
+  //     return -1;
+  //   } else {
+  //     write_bytes += rc;
+  //     pointer     += rc;
+  //   }
+  // }
+  
+  // pointer = recv_buf;
+  // while (read_bytes < length) {
+  //   rc = read(sock, pointer, length - read_bytes);
+  //   if (rc <= 0) {
+  //     return -1;
+  //   } else {
+  //     read_bytes += rc;
+  //     pointer    += rc;
+  //   }
+  // }
+
+  // sscanf(recv_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", &remote_compute_id, 
+  //         &remote_meta.registered_memory, &remote_meta.registered_key,
+  //         &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
+
+
+  // LOG_DEBUG("RdmaClient, compute id of %u, received sync data, remote_compute_id=%u, "
+  //         "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
+  //         "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
+  //         remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
+  // return 0;
+
+  size_t length = 26;
   char *send_buf  = nullptr;
   char *recv_buf  = nullptr;
   send_buf        = (char *)malloc(length);
@@ -558,9 +618,53 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
           "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
   
-  sprintf(send_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", compute_id, meta.registered_memory, 
-          meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
+  // input: pointer, pointer
+  auto addUint32 = [&](uint32_t x) {
+    x = htobe32(x);
+    memcpy(pointer, reinterpret_cast<char *>(&x), sizeof(uint32_t));
+    pointer += sizeof(uint32_t);
+  };
+  auto addUint64 = [&](uint64_t x) {
+    x = htobe64(x);
+    memcpy(pointer, reinterpret_cast<char *>(&x), sizeof(uint64_t));
+    pointer += sizeof(uint64_t);
+  };
+  auto addUint16 = [&](uint16_t x) {
+    x = htobe16(x);
+    memcpy(pointer, reinterpret_cast<char *>(&x), sizeof(uint16_t));
+    pointer += sizeof(uint16_t);
+  };
+
+  auto getUint32 = [&]() -> uint32_t {
+    uint32_t x;
+    memcpy(reinterpret_cast<char *>(&x), pointer, sizeof(uint32_t));
+    x = be32toh(x);
+    pointer += sizeof(uint32_t);
+    return x;
+  };
+  auto getUint64 = [&]() -> uint64_t {
+    uint64_t x;
+    memcpy(reinterpret_cast<char *>(&x), pointer, sizeof(uint64_t));
+    x = be64toh(x);
+    pointer += sizeof(uint64_t);
+    return x;
+  };
+  auto getUint16 = [&]() -> uint16_t {
+    uint16_t x;
+    memcpy(reinterpret_cast<char *>(&x), pointer, sizeof(uint16_t));
+    x = be16toh(x);
+    pointer += sizeof(uint16_t);
+    return x;
+  };
   
+  pointer = send_buf;
+  addUint32(compute_id);
+  addUint64(meta.registered_memory);
+  addUint32(meta.registered_key);
+  addUint32(meta.qp_num);
+  addUint32(meta.qp_psn);
+  addUint16(meta.lid);
+
   pointer = send_buf;
   while (write_bytes < length) {
     rc = write(sock, pointer, length);
@@ -571,7 +675,7 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
       pointer     += rc;
     }
   }
-  
+
   pointer = recv_buf;
   while (read_bytes < length) {
     rc = read(sock, pointer, length - read_bytes);
@@ -583,16 +687,20 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
     }
   }
 
-  sscanf(recv_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", &remote_compute_id, 
-          &remote_meta.registered_memory, &remote_meta.registered_key,
-          &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
-
+  pointer = recv_buf;
+  remote_compute_id = getUint32();
+  remote_meta.registered_memory = getUint64();
+  remote_meta.registered_key = getUint32();
+  remote_meta.qp_num = getUint32();
+  remote_meta.qp_psn = getUint32();
+  remote_meta.lid = getUint16();
 
   LOG_DEBUG("RdmaClient, compute id of %u, received sync data, remote_compute_id=%u, "
           "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
           "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   return 0;
+
 }
 
 
