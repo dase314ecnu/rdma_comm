@@ -523,7 +523,7 @@ int RdmaClient::connectSocket() {
     return -1;
   }
 
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+  // setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
   while (connect(sock, (struct sockaddr*)&remote_address, sizeof(struct sockaddr)) != 0) {
     usleep(1000);
   }
