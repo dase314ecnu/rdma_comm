@@ -534,7 +534,7 @@ int RdmaClient::connectSocket() {
 int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
-  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta);
+  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta) - sizeof(ibv_gid) + 6; // 6个分隔符
   char *send_buf  = nullptr;
   char *recv_buf  = nullptr;
   send_buf        = (char *)malloc(length);
@@ -558,17 +558,17 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
           "local_qp_psn=%lld, local_lid=%lld", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
 
-  sprintf(pointer, "%08x", htobe32(compute_id));
+  sprintf(pointer, "%08x:", htobe32(compute_id));
   pointer += sizeof(uint32_t);
-  sprintf(pointer, "%016lx", htobe64(meta.registered_memory));
+  sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));
   pointer += sizeof(uintptr_t);
-  sprintf(pointer, "%08x", htobe32(meta.registered_key));
+  sprintf(pointer, "%08x:", htobe32(meta.registered_key));
   pointer += sizeof(uint32_t);
-  sprintf(pointer, "%08x", htobe32(meta.qp_num));
+  sprintf(pointer, "%08x:", htobe32(meta.qp_num));
   pointer += sizeof(uint32_t);
-  sprintf(pointer, "%08x", htobe32(meta.qp_psn));
+  sprintf(pointer, "%08x:", htobe32(meta.qp_psn));
   pointer += sizeof(uint32_t);
-  sprintf(pointer, "%04x", htobe16(meta.lid));
+  sprintf(pointer, "%04x:", htobe16(meta.lid));
   pointer += sizeof(uint16_t);
   
   pointer = send_buf;
@@ -593,10 +593,10 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
     }
   }
 
-  sscanf(recv_buf, "%08x%016lx%08x%08x%08x%04x", &remote_compute_id, 
+  sscanf(recv_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", &remote_compute_id, 
           &remote_meta.registered_memory, &remote_meta.registered_key,
           &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
-  compute_id = be32toh(compute_id);
+  remote_compute_id = be32toh(remote_compute_id);
   remote_meta.registered_memory = be64toh(remote_meta.registered_memory);
   remote_meta.registered_key    = be32toh(remote_meta.registered_key);
   remote_meta.qp_num            = be32toh(remote_meta.qp_num);
