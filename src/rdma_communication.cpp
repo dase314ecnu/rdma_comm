@@ -727,13 +727,7 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
     throw std::bad_exception();
   }
   for (int i = 0; i < this->node_num; ++i) {
-    try {
-      // new (&this->sends[i]) ZSend(nullptr, this->slot_num);
-      // this->sends[i] = ZSend(nullptr, this->slot_num);
-      ZSend(nullptr, this->slot_num);
-    } catch (...) {
-      throw std::bad_exception();
-    }
+    this->sends[i] = std::move(ZSend(nullptr, this->slot_num));
   }
 
   this->awakes = new ZAwake[this->node_num];
@@ -1288,3 +1282,4 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
 // 1. void*和uintptr_t之间的转换
 // 2. 批量发送slot中的数据与批量处理slot中的数据
 // 3. 不要用C语言的%d, %u之类的，很容易出bug
+// 4. 赋值构造函数
