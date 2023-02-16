@@ -699,12 +699,6 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   sscanf(recv_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", &remote_compute_id, 
           &remote_meta.registered_memory, &remote_meta.registered_key,
           &remote_meta.qp_num, &remote_meta.qp_psn, &remote_meta.lid);
-  remote_compute_id = be32toh(remote_compute_id);
-  remote_meta.registered_memory = be64toh(remote_meta.registered_memory);
-  remote_meta.registered_key    = be32toh(remote_meta.registered_key);
-  remote_meta.qp_num            = be32toh(remote_meta.qp_num);
-  remote_meta.qp_psn            = be32toh(remote_meta.qp_psn);
-  remote_meta.lid               = be16toh(remote_meta.lid);
 
   LOG_DEBUG("RdmaServer, compute id of %u, received sync data, remote_compute_id=%u, "
           "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
@@ -712,19 +706,8 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   
   // 再发送
-  pointer = send_buf;
-  sprintf(pointer, "%08x:", htobe32(compute_id));
-  pointer += sizeof(uint32_t) + 1;
-  sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));
-  pointer += sizeof(uintptr_t) + 1;
-  sprintf(pointer, "%08x:", htobe32(meta.registered_key));
-  pointer += sizeof(uint32_t) + 1;
-  sprintf(pointer, "%08x:", htobe32(meta.qp_num));
-  pointer += sizeof(uint32_t) + 1;
-  sprintf(pointer, "%08x:", htobe32(meta.qp_psn));
-  pointer += sizeof(uint32_t) + 1;
-  sprintf(pointer, "%04x:", htobe16(meta.lid));
-  pointer += sizeof(uint16_t) + 1;
+  sprintf(send_buf, "%08x:%016lx:%08x:%08x:%08x:%04x:", compute_id, meta.registered_memory, 
+          meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
   
   pointer = send_buf;
   while (write_bytes < length) {
