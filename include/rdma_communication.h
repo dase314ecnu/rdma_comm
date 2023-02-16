@@ -83,15 +83,6 @@ typedef struct ZSend {
             this->states[i] = SlotState::SLOT_IDLE;
         }
     }
-
-    void operator=(const struct ZSend&& other) {
-      this->states = other.states;
-      this->front = other.front;
-      this->rear = other.rear;
-      this->notsent_front = other.notsent_front;
-      this->notsent_rear = other.notsent_rear;
-      this->spinlock = other.spinlock;
-    }
 } ZSend;
 
 typedef struct ZAwake {
