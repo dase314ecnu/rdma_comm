@@ -563,7 +563,7 @@ void RdmaServer<T>::listenThreadFun() {
     this->rdma_queue_pairs[idx] = qp;
     pthread_spin_unlock(&(this->locks[idx]));
 
-    LOG_DEBUG("RdmaServer listen thread, success to make qp ready to send, receive thread of %d"
+    LOG_DEBUG("RdmaServer listen thread, success to make qp ready to send, receive thread of %d "
             "will handle the qp connection", idx);
   }
   
@@ -745,7 +745,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
     }
   });
 
-  LOG_DEBUG("RdmaClient, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
+  LOG_DEBUG("RdmaServer, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
           "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
           "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
@@ -808,7 +808,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   remote_meta.qp_psn = getUint32();
   remote_meta.lid = getUint16();
 
-  LOG_DEBUG("RdmaClient, compute id of %u, received sync data, remote_compute_id=%u, "
+  LOG_DEBUG("RdmaServer, compute id of %u, received sync data, remote_compute_id=%u, "
           "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
           "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
