@@ -729,7 +729,8 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   for (int i = 0; i < this->node_num; ++i) {
     try {
       // new (&this->sends[i]) ZSend(nullptr, this->slot_num);
-      this->sends[i] = ZSend(nullptr, this->slot_num);
+      // this->sends[i] = ZSend(nullptr, this->slot_num);
+      ZSend(nullptr, this->slot_num);
     } catch (...) {
       throw std::bad_exception();
     }
