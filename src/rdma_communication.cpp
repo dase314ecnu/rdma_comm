@@ -722,8 +722,16 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
     throw std::bad_exception();
   }
 
-  // this->sends = new ZSend[this->node_num];
-  this->sends = (ZSend *)malloc(sizeof(ZSend) * this->node_num);
+  // test
+  {
+    ZSend2 *sends = nullptr;
+    sends = new ZSend2[10];
+    for (int i = 0; i < 10; ++i) {
+      sends[i] = ZSend2();
+    }
+  }
+
+  this->sends = new ZSend[this->node_num];
   if (this->sends = nullptr) {
     throw std::bad_exception();
   }
@@ -818,8 +826,7 @@ void RdmaClient::Destroy() {
         this->sends[i].spinlock = nullptr;
       }
     }
-    // delete[] this->sends;
-    free(this->sends);
+    delete[] this->sends;
   }
   this->sends = nullptr;
 
