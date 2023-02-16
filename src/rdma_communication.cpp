@@ -545,12 +545,12 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
   size_t read_bytes  = 0;
 
   SCOPEEXIT([&]() {
-    // if (send_buf != nullptr) {
-    //   free(send_buf);
-    // }
-    // if (recv_buf != nullptr) {
-    //   free(recv_buf);
-    // }
+    if (send_buf != nullptr) {
+      free(send_buf);
+    }
+    if (recv_buf != nullptr) {
+      free(recv_buf);
+    }
   });
 
   LOG_DEBUG("RdmaClient, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
@@ -559,17 +559,17 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
 
   sprintf(pointer, "%08x:", htobe32(compute_id));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));
-  pointer += sizeof(uintptr_t);
+  pointer += sizeof(uintptr_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.registered_key));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.qp_num));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.qp_psn));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%04x:", htobe16(meta.lid));
-  pointer += sizeof(uint16_t);
+  pointer += sizeof(uint16_t) + 1;
   
   pointer = send_buf;
   while (write_bytes < length) {

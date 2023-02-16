@@ -713,17 +713,17 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   
   // 再发送
   sprintf(pointer, "%08x:", htobe32(compute_id));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%016lx:", htobe64(meta.registered_memory));
-  pointer += sizeof(uintptr_t);
+  pointer += sizeof(uintptr_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.registered_key));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.qp_num));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%08x:", htobe32(meta.qp_psn));
-  pointer += sizeof(uint32_t);
+  pointer += sizeof(uint32_t) + 1;
   sprintf(pointer, "%04x:", htobe16(meta.lid));
-  pointer += sizeof(uint16_t);
+  pointer += sizeof(uint16_t) + 1;
   
   pointer = send_buf;
   while (write_bytes < length) {
