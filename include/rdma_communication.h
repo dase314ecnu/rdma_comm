@@ -660,12 +660,12 @@ template<typename T>
 int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
 {
-  LOG_DEBUG("RdmaServer, compute id of %lld, Start to dataSyncWithSocket, remote socket is %d, "
-          "local_registered_memory=%lld, local_registered_key=%lld, local_qp_num=%lld, "
-          "local_qp_psn=%lld, local_lid=%lld", compute_id, sock, meta.registered_memory, 
+  LOG_DEBUG("RdmaServer, compute id of %lu, Start to dataSyncWithSocket, remote socket is %d, "
+          "local_registered_memory=%llu, local_registered_key=%lu, local_qp_num=%lu, "
+          "local_qp_psn=%lu, local_lid=%d", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
   
-  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta) - sizeof(ibv_gid) + 6; // 5个分隔符
+  size_t length = sizeof(uint32_t) + sizeof(QueuePairMeta) - sizeof(ibv_gid) + 6; // 6个分隔符
   char *send_buf  = nullptr;
   char *recv_buf  = nullptr;
   send_buf        = (char *)malloc(length);
@@ -706,9 +706,9 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   remote_meta.qp_psn            = be32toh(remote_meta.qp_psn);
   remote_meta.lid               = be16toh(remote_meta.lid);
 
-  LOG_DEBUG("RdmaServer, compute id of %lld, received sync data, remote_compute_id=%lld, "
-          "remote_registered_memory=%lld, remote_registered_key=%lld, remote_qp_num=%lld, "
-          "remote_qp_psn=%lld, remote_lid=%lld", compute_id, remote_compute_id, remote_meta.registered_memory,
+  LOG_DEBUG("RdmaServer, compute id of %lu, received sync data, remote_compute_id=%lu, "
+          "remote_registered_memory=%llu, remote_registered_key=%lu, remote_qp_num=%lu, "
+          "remote_qp_psn=%lu, remote_lid=%d", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   
   // 再发送
@@ -736,8 +736,8 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
     }
   }
 
-  LOG_DEBUG("RdmaServer, compute id of %lld, success to dataSyncWithSocket, remote socket is %d, "
-          "remote compute_id is %lld", compute_id, sock, remote_compute_id);
+  LOG_DEBUG("RdmaServer, compute id of %lu, success to dataSyncWithSocket, remote socket is %d, "
+          "remote compute_id is %lu", compute_id, sock, remote_compute_id);
 
   return 0;
 }
