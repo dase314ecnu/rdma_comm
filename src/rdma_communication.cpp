@@ -545,17 +545,17 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
   size_t read_bytes  = 0;
 
   SCOPEEXIT([&]() {
-    if (send_buf != nullptr) {
-      free(send_buf);
-    }
-    if (recv_buf != nullptr) {
-      free(recv_buf);
-    }
+    // if (send_buf != nullptr) {
+    //   free(send_buf);
+    // }
+    // if (recv_buf != nullptr) {
+    //   free(recv_buf);
+    // }
   });
 
-  LOG_DEBUG("RdmaClient, compute id of %lu, Start to dataSyncWithSocket, remote socket is %d, "
-          "local_registered_memory=%llu, local_registered_key=%lu, local_qp_num=%lu, "
-          "local_qp_psn=%lu, local_lid=%d", compute_id, sock, meta.registered_memory, 
+  LOG_DEBUG("RdmaClient, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
+          "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
+          "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
 
   sprintf(pointer, "%08x:", htobe32(compute_id));
@@ -604,9 +604,9 @@ int RdmaClient::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePai
   remote_meta.lid               = be16toh(remote_meta.lid);
 
 
-  LOG_DEBUG("RdmaClient, compute id of %lu, received sync data, remote_compute_id=%lu, "
-          "remote_registered_memory=%llu, remote_registered_key=%lu, remote_qp_num=%lu, "
-          "remote_qp_psn=%lu, remote_lid=%d", compute_id, remote_compute_id, remote_meta.registered_memory,
+  LOG_DEBUG("RdmaClient, compute id of %u, received sync data, remote_compute_id=%u, "
+          "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
+          "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
   return 0;
 }

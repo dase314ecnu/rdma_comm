@@ -676,12 +676,12 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   size_t read_bytes  = 0;
 
   SCOPEEXIT([&]() {
-    if (send_buf != nullptr) {
-      free(send_buf);
-    }
-    if (recv_buf != nullptr) {
-      free(recv_buf);
-    }
+    // if (send_buf != nullptr) {
+    //   free(send_buf);
+    // }
+    // if (recv_buf != nullptr) {
+    //   free(recv_buf);
+    // }
   });
   
   // 先接收
