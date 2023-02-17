@@ -247,6 +247,10 @@ void TestSimpleServerClass::runClient()
         return;
     }
 
+    if (rdma_client->Run() != 0) {
+        LOG_DEBUG("TestSimpleServer failed, failed to run CommonRdmaClient");
+    }
+
     // 发送消息
     char content[20] = "zhouhuahui";
     int length = sizeof(int) + strlen(content) + 1;
