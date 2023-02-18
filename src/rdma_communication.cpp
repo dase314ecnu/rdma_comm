@@ -902,19 +902,20 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
         // 接收到回复
         uint64_t slot_idx = wc.imm_data;
+        if (qp->PostReceive() != 0) {
+          return;
+        }
+
         (void) sem_post(&(awake->sems[slot_idx]));
         (void) pthread_spin_lock(send->spinlock);
+        // slot_idx号的slot可以被标记为空闲了
+        send->states[slot_idx] = SlotState::SLOT_IDLE;
         if (slot_idx == send->front) {
-          send->states[slot_idx] = SlotState::SLOT_IDLE;
           uint64_t p = slot_idx;
           while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
             p = (p + 1) % (this->slot_num + 1);
           }
           send->front = p;
-        }
-        if (qp->PostReceive() != 0) {
-          (void) pthread_spin_unlock(send->spinlock);
-          return;
         }
         (void) pthread_spin_unlock(send->spinlock);
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
