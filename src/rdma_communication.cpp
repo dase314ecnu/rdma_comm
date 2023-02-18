@@ -985,6 +985,9 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
   if (size > this->slot_size) {
     return -1;
   }
+  /** 
+   * @todo: 采用round robin法来实现负载均衡
+   */
   while (true) {
     for (int i = 0; i < this->node_num; ++i) {
       ZSend  *send = &this->sends[i];
