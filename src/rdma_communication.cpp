@@ -1004,10 +1004,12 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       if (this->rdma_queue_pairs[i]->PostSend(rear, rear) != 0) {
         return -1;
       }
+      LOG_DEBUG("CommonRdmaClient success to post send in send node of %d", i);
+
       (void) sem_wait(&(awake->sems[rear]));
       return 0;
     }
-    usleep(100);
+    usleep(10);
   }
 }
 

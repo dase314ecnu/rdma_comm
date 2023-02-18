@@ -602,7 +602,7 @@ void* RdmaServer<T>::listenThreadFunEntry(void *arg) {
 // 这里node_idx
 template<typename T>
 void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
-  LOG_DEBUG("RdmaServer receive thread of %lld, start to wait rdma connection to be set", node_idx);
+  LOG_DEBUG("RdmaServer receive thread of %u, start to wait rdma connection to be set", node_idx);
 
   // 等待qp建立连接
   while (!this->stop) {
@@ -627,12 +627,12 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
     return;
   }
   if (waitset->addFd(this->rdma_queue_pairs[node_idx]->GetChannel()->fd) != 0) {
-    LOG_DEBUG("RdmaServer receive thread of %lld, failed to add channel fd of %d to waitset", 
+    LOG_DEBUG("RdmaServer receive thread of %u, failed to add channel fd of %d to waitset", 
             node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
     return;
   }
 
-  LOG_DEBUG("RdmaServer receive thread of %lld, success to add channel fd of %d to waitset"
+  LOG_DEBUG("RdmaServer receive thread of %u, success to add channel fd of %d to waitset"
           ", start to wait for requests", node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
   
   // 循环等待消息到来，并交给处理线程池中进行处理
@@ -650,25 +650,29 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
     std::vector<struct ibv_wc> wcs;
     rc = this->rdma_queue_pairs[node_idx]->PollCompletionsFromCQ(wcs);
     if (rc < 0) {
+      LOG_DEBUG("RdmaServer worker thread of %u, failed to poll completions from CQ", node_idx);
       return;
     }
 
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
       if (wc.status != IBV_WC_SUCCESS) {
+        LOG_DEBUG("RdmaServer worker thread of %u, failed to get a IBV_WC_SUCCESSed wc", node_idx);
         return;
       }
 
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+        LOG_DEBUG("RdmaServer worker thread of %u, get a IBV_WC_RECV_RDMA_WITH_IMMed wc", node_idx);
         uint32_t  slot_idx = wc.imm_data;
         char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
                 slot_idx * this->slot_size;
+        // 调用工作线程池的接口，将请求发给工作线程池进行处理
         this->worker_threadpool->Start(buf, node_idx, slot_idx);
       }
     }
   }
 
-  LOG_DEBUG("RdmaServer receive thread of %lld, stop working", node_idx);
+  LOG_DEBUG("RdmaServer receive thread of %u, stop working", node_idx);
 }
 
 template<typename T>

@@ -1,12 +1,21 @@
 #include <unistd.h>
 #include <string>
 #include <cstring>
+#include <signal.h>
 
 #include "test/test_simple_server.h"
 #include "rdma_communication.h"
 #include "configuration.h"
 #include "log.h"
 #include "inner_scope.h"
+
+// 是否停止服务器
+int stop_server = 0;
+
+void sigint_handler(int sig) {
+    printf("receive SIG_INT signal\n");
+    stop_server = 1;
+}
 
 /**
  * ------------------------------------------------------------------------------------------
@@ -187,9 +196,11 @@ void TestSimpleServerClass::runServer()
               {
     if (simple_server != nullptr) {
         delete simple_server;
+        simple_server = nullptr;
     } 
     if (worker_threadpool != nullptr) {
         delete worker_threadpool;
+        worker_threadpool = nullptr;
     }
     });
 
@@ -217,8 +228,22 @@ void TestSimpleServerClass::runServer()
         LOG_DEBUG("TestSimpleServer failed: failed to Run TestWorkerThreadpool");
     }
 
-    sleep(1000);
+    // 注册一个信号处理函数，当CTRL+C到来时，先将simple_server销毁，再将worker_threadpool销毁
+    {
+        struct sigaction act, oldact;
+        act.sa_handler = sigint_handler;
+        sigaddset(&act.sa_mask, SIGQUIT);
+        act.sa_flags = SA_NODEFER; 
+        sigaction(SIGINT, &act, &oldact);
+    }
 
+    int timer = 10000;
+    while (timer-- > 0) {
+        if (stop_server != 0) {
+            break; // 退出
+        } 
+        sleep(1);
+    }
 }
 
 void TestSimpleServerClass::runClient()

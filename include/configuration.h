@@ -12,4 +12,11 @@
 #define IS_SERVER (1)   // 是否是RdmaServer
 #define SERVER_IP ("49.52.27.135")  //RdmaServer的地址
 
+
+/** 
+ * @todo
+ */
+// node_num, slot_num, slot_size值
+// 每个工作线程的接收队列长度
+
 #endif
