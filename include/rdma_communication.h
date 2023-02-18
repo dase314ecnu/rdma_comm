@@ -306,6 +306,14 @@ private:
 
 protected:
     pthread_t *send_threads = nullptr;   // node_num长度
+    
+    /** 
+     * 用于RoundRobin算法
+     * 每次从start_idx号的node找可以用于发送的node，每次PostRequest后start_idx = (start_idx + 1) % node_num
+     */
+    uint32_t start_idx = 0;
+    pthread_spinlock_t start_idx_lock;
+
 protected:
     /** 
      * 不断监听node_idx号的node，看是否有回复到来，并进行处理
@@ -579,7 +587,7 @@ void RdmaServer<T>::listenThreadFun() {
     }
 
     // 赋值到this->rdma_queue_pairs[]
-    int idx = this->compute_num * remote_compute_id + comp_counter[remote_compute_id];
+    int idx = this->node_num * remote_compute_id + comp_counter[remote_compute_id];
     comp_counter[remote_compute_id]++;
     pthread_spin_lock(&(this->locks[idx]));
     this->rdma_queue_pairs[idx] = qp;
@@ -606,6 +614,21 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   
   // 统计信息，接收请求的数量
   uint64_t receive_cnt = 0;
+  WaitSet *waitset = nullptr;
+  SCOPEEXIT([&]() {
+    if (waitset != nullptr) {
+      delete waitset; 
+      waitset = nullptr;
+    }
+    LOG_DEBUG("RdmaServer receive thread of %u, stop working, have received %lu requests", 
+          node_idx, receive_cnt);
+  });
+  
+  try {
+    waitset = new WaitSet();
+  } catch (...) {
+    return;
+  }
 
   // 等待qp建立连接
   while (!this->stop) {
@@ -622,13 +645,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   if (this->stop) {
     return;
   }
-  
-  WaitSet *waitset = nullptr;
-  try {
-    waitset = new WaitSet();
-  } catch (...) {
-    return;
-  }
+
   if (waitset->addFd(this->rdma_queue_pairs[node_idx]->GetChannel()->fd) != 0) {
     LOG_DEBUG("RdmaServer receive thread of %u, failed to add channel fd of %d to waitset", 
             node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
@@ -676,9 +693,6 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
       }
     }
   }
-  
-  LOG_DEBUG("RdmaServer receive thread of %u, stop working, have received %lu requests", 
-          node_idx, receive_cnt);
 }
 
 template<typename T>

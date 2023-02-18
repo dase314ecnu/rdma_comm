@@ -932,10 +932,14 @@ void* CommonRdmaClient::sendThreadFunEntry(void *arg) {
 
 CommonRdmaClient::CommonRdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num)
-            : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, _node_num) {}
+            : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, _node_num) 
+{
+  pthread_spin_init(&(this->start_idx_lock), 0);
+}
 
 CommonRdmaClient::~CommonRdmaClient() {
   this->Stop();
+  pthread_spin_destroy(&(this->start_idx_lock));
 }
 
 int CommonRdmaClient::Run() {
@@ -985,11 +989,20 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
   if (size > this->slot_size) {
     return -1;
   }
+
+  int start = 0;
   /** 
-   * @todo: 采用round robin法来实现负载均衡
+   * 采用round robin法来实现负载均衡
    */
+  pthread_spin_lock(&(this->start_idx_lock));
+  start = this->start_idx;
+  this->start_idx = (this->start_idx + 1) % this->node_num;
+  pthread_spin_unlock(&(this->start_idx_lock));
+
   while (true) {
-    for (int i = 0; i < this->node_num; ++i) {
+    for (int j = 0; j < this->node_num; ++j) {
+      int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+
       ZSend  *send = &this->sends[i];
       ZAwake *awake = &this->awakes[i];
       uint64_t rear = 0;
