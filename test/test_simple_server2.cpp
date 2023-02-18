@@ -156,10 +156,10 @@ void TestSimpleServer2Class::runClient() {
             rdma_client->PostRequest((void *)send_buf, length);
         }
     };
-    // test_threads = new std::thread*[_num_test_thread];
-    // for (int i = 0; i < _num_test_thread; ++i) {
-    //     test_threads[i] = new std::thread(func);
-    // }
+    test_threads = new std::thread*[_num_test_thread];
+    for (int i = 0; i < _num_test_thread; ++i) {
+        test_threads[i] = new std::thread(func);
+    }
 }
 
 int main() {
