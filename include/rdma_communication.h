@@ -677,7 +677,8 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
       if (wc.status != IBV_WC_SUCCESS) {
-        LOG_DEBUG("RdmaServer recieve thread of %u, failed to get a IBV_WC_SUCCESSed wc", node_idx);
+        LOG_DEBUG("RdmaServer recieve thread of %u, failed to get a IBV_WC_SUCCESSed wc, wc.status is %d"
+                , node_idx, wc.status);
         return;
       }
 
