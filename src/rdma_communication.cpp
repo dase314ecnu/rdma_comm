@@ -727,8 +727,9 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
     throw std::bad_exception();
   }
   for (int i = 0; i < this->node_num; ++i) {
-    ZSend tmp = ZSend(nullptr, this->slot_num);
-    this->sends[i] = tmp;
+    // ZSend tmp = ZSend(nullptr, this->slot_num);
+    // this->sends[i] = tmp;
+    new (&this->sends[i]) ZSend(nullptr, this->slot_num);
   }
 
   this->awakes = new ZAwake[this->node_num];
