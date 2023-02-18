@@ -893,7 +893,8 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
       if (wc.status != IBV_WC_SUCCESS) {
-        LOG_DEBUG("CommonRdmaClient send thread of %u, get a failed work completion", node_idx);
+        LOG_DEBUG("CommonRdmaClient send thread of %u, get a failed work completion"
+                ", wc.status is %d", node_idx, wc.status);
         return;
       }
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
