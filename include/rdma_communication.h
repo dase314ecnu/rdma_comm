@@ -612,7 +612,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
     pthread_spin_lock(&(this->locks[node_idx]));
     if (this->rdma_queue_pairs[node_idx] == nullptr) {
       pthread_spin_unlock(&(this->locks[node_idx]));
-      sleep(1);
+      sleep(2);
       continue;
     }
     pthread_spin_unlock(&(this->locks[node_idx]));
