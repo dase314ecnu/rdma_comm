@@ -187,7 +187,7 @@ int RdmaQueuePair::modifyQPtoRTS() {
   memset(&attr, 0, sizeof(attr));
 
   attr.qp_state = IBV_QPS_RTS;
-  attr.sq_psn = this->remote_qp_psn;
+  attr.sq_psn = this->qp_psn;
   flags = IBV_QP_STATE | IBV_QP_SQ_PSN;
 
   attr.timeout = 14;
