@@ -886,8 +886,9 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0) {
       return;
     }
-
-    LOG_DEBUG("CommonRdmaClient send thread of %u, get %d work completions", node_idx, rc);
+    
+    // zhouhuahui test
+    // LOG_DEBUG("CommonRdmaClient send thread of %u, get %d work completions", node_idx, rc);
 
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
@@ -912,8 +913,6 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           return;
         }
         (void) pthread_spin_unlock(send->spinlock);
-      } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-        LOG_DEBUG("CommonRdmaClient send thread of %u, get wc of IBV_WC_RECV_RDMA_WITH_IMM", node_idx);
       }
     }
   }
