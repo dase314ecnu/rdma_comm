@@ -603,6 +603,9 @@ void* RdmaServer<T>::listenThreadFunEntry(void *arg) {
 template<typename T>
 void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   LOG_DEBUG("RdmaServer receive thread of %u, start to wait rdma connection to be set", node_idx);
+  
+  // 统计信息，接收请求的数量
+  uint64_t receive_cnt = 0;
 
   // 等待qp建立连接
   while (!this->stop) {
@@ -663,6 +666,8 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
 
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
         LOG_DEBUG("RdmaServer worker thread of %u, get a IBV_WC_RECV_RDMA_WITH_IMMed wc", node_idx);
+        receive_cnt++;
+
         uint32_t  slot_idx = wc.imm_data;
         char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
                 slot_idx * this->slot_size;
@@ -671,8 +676,9 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
       }
     }
   }
-
-  LOG_DEBUG("RdmaServer receive thread of %u, stop working", node_idx);
+  
+  LOG_DEBUG("RdmaServer receive thread of %u, stop working, have received %lu requests", 
+          node_idx, receive_cnt);
 }
 
 template<typename T>

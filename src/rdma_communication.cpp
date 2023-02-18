@@ -850,13 +850,17 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
   int      rc      = 0;
   ZSend   *send    = &this->sends[node_idx];
   ZAwake  *awake   = &this->awakes[node_idx];
+  // 统计信息，发送请求的个数
+  uint64_t send_cnt = 0;
+
   try {
     waitset = new WaitSet();
   } catch (...) {
     return;
   }
   SCOPEEXIT([&]() {
-    LOG_DEBUG("CommonRdmaClient send thread of %lld will retire", node_idx);
+    LOG_DEBUG("CommonRdmaClient send thread of %u will retire, have sent %lu requests", 
+            node_idx, send_cnt);
     if (waitset != nullptr) {
       delete waitset;
       waitset = nullptr;
@@ -887,9 +891,6 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0) {
       return;
     }
-    
-    // zhouhuahui test
-    // LOG_DEBUG("CommonRdmaClient send thread of %u, get %d work completions", node_idx, rc);
 
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
@@ -916,6 +917,8 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           return;
         }
         (void) pthread_spin_unlock(send->spinlock);
+      } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
+        send_cnt++;
       }
     }
   }
