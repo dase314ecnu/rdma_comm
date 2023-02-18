@@ -826,7 +826,7 @@ void RdmaClient::Destroy() {
   if (this->awakes != nullptr && this->use_shared_memory == false) {
     for (int i = 0; i < this->node_num; ++i) {
       if (this->awakes[i].sems != nullptr) {
-        for (int j = 0; j < this->slot_num + 1; ++i) {
+        for (int j = 0; j < this->slot_num + 1; ++j) {
           (void) sem_destroy(&(this->awakes[i].sems[j]));
         }
         delete[] this->awakes[i].sems;
