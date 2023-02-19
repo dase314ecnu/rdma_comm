@@ -872,7 +872,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
   rc = waitset->addFd(qp->GetChannel()->fd);
   if (rc != 0) {
-    LOG_DEBUG("CommonRdmaClient send thread of %lld, failed to add channel fd of %d to waitset", 
+    LOG_DEBUG("CommonRdmaClient send thread of %u, failed to add channel fd of %d to waitset", 
             node_idx, qp->GetChannel()->fd);
     return;
   }
@@ -921,6 +921,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         (void) pthread_spin_unlock(send->spinlock);
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         send_cnt++;
+        LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
       }
     }
   }
@@ -1000,8 +1001,7 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
   start = this->start_idx;
   this->start_idx = (this->start_idx + 1) % this->node_num;
   pthread_spin_unlock(&(this->start_idx_lock));
-  
-  uint64_t cnt = 0;  // 计数
+
   while (true) {
     for (int j = 0; j < this->node_num; ++j) {
       int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
@@ -1026,8 +1026,6 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       if (this->rdma_queue_pairs[i]->PostSend(rear, rear) != 0) {
         return -1;
       }
-      cnt++;
-      LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %d", cnt, i);
 
       (void) sem_wait(&(awake->sems[rear]));
       return 0;
