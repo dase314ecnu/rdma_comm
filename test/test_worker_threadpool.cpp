@@ -124,12 +124,15 @@ void TestWorkerThreadpool::workerThreadFun() {
         
         if (find) {
             req_cnt++;
-            char *buf = (char *)msg.request;
-            int length = msg.parseLength(buf);
-            buf += sizeof(int);
-            std::string content = msg.parseContent(buf);
-            LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d, content: %s",
-                    length, content.c_str());
+            // char *buf = (char *)msg.request;
+            // int length = msg.parseLength(buf);
+            // buf += sizeof(int);
+            // std::string content = msg.parseContent(buf);
+            // LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d, content: %s",
+            //         length, content.c_str());
+            // zhouhuahui test
+            LOG_DEBUG("TestWorkerThreadpool worker thread, received msg");
+
             // 回复
             if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx) != 0) {
                 break;

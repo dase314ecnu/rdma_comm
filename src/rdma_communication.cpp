@@ -315,7 +315,9 @@ int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx) {
   wr.sg_list = &sg;
   wr.num_sge = 1;
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-  wr.wr.rdma.remote_addr = recv_addr;
+  // wr.wr.rdma.remote_addr = recv_addr;
+  // zhouhuahui test
+  wr.wr.rdma.remote_addr = this->remote_memory;
   wr.wr.rdma.rkey = this->remote_mr_key;
 
   wr.send_flags = IBV_SEND_SIGNALED;

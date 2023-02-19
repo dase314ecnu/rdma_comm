@@ -686,8 +686,11 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
         receive_cnt++;
 
         uint32_t  slot_idx = wc.imm_data;
-        char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
-                slot_idx * this->slot_size;
+        // char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
+        //         slot_idx * this->slot_size;
+        // zhouhuahui test
+        char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory();
+        
         if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
           LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
           return;
