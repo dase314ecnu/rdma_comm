@@ -165,7 +165,7 @@ void TestSimpleServer2Class::runClient() {
 int main() {
     TestSimpleServer2Class test;
     if (IS_SERVER) {
-        test.TestSimpleServer2(IsServer{}, 50, 1000, 5, 64, 50);
+        test.TestSimpleServer2(IsServer{}, 5, 1000, 5, 64, 50);
     } else {
         // node_num: 5
         // slot_size: 64
