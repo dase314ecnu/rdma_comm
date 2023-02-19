@@ -165,13 +165,20 @@ void TestSimpleServer2Class::runClient() {
 int main() {
     TestSimpleServer2Class test;
     if (IS_SERVER) {
-        test.TestSimpleServer2(IsServer{}, 50, 1000, 50, 64, 50);
+        // 由于是测试，所以我写的工作线程很简单，所有工作线程都从一个队列中取数据
+        // 因此如果将工作线程的数量设置的太大，则会大大增加竞争，性能非常差
+        test.TestSimpleServer2(IsServer{}, 3, 1000, 50, 64, 500);
     } else {
         // node_num: 5
         // slot_size: 64
         // slot_num: 50
         // num_test_thread: 1000  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 1000 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 50, 64, 50, 1000, 1000);
+        test.TestSimpleServer2(IsClient{}, 50, 64, 500, 1000, 1000);
     }
 }
+
+/**  
+ * @todo: 为什么和qp_num和slot_num设置的过大，比如50和500，会造成wc.status出现错误码8和10
+ * @todo: 实现批量发送，批量响应，批量将请求加入到请求队列
+ */
