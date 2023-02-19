@@ -895,7 +895,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
 template<typename T>
 RdmaServer<T>::RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
         uint32_t _port, T *_worker_threadpool) 
-        : compute_num(_compute_num), node_num(_node_num), slot_size(_slot_size), slot_num(_slot_size), 
+        : compute_num(_compute_num), node_num(_node_num), slot_size(_slot_size), slot_num(_slot_num), 
           local_port(_port), worker_threadpool(_worker_threadpool)
 {
   LOG_DEBUG("RdmaServer Start to construct RdmaServer");
