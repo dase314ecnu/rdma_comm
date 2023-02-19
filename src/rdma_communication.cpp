@@ -315,9 +315,7 @@ int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx) {
   wr.sg_list = &sg;
   wr.num_sge = 1;
   wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-  // wr.wr.rdma.remote_addr = recv_addr;
-  // zhouhuahui test
-  wr.wr.rdma.remote_addr = this->remote_memory;
+  wr.wr.rdma.remote_addr = recv_addr;
   wr.wr.rdma.rkey = this->remote_mr_key;
 
   wr.send_flags = IBV_SEND_SIGNALED;
@@ -1002,7 +1000,8 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
   start = this->start_idx;
   this->start_idx = (this->start_idx + 1) % this->node_num;
   pthread_spin_unlock(&(this->start_idx_lock));
-
+  
+  uint64_t cnt = 0;  // 计数
   while (true) {
     for (int j = 0; j < this->node_num; ++j) {
       int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
@@ -1027,7 +1026,8 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       if (this->rdma_queue_pairs[i]->PostSend(rear, rear) != 0) {
         return -1;
       }
-      LOG_DEBUG("CommonRdmaClient success to post send in send node of %d", i);
+      cnt++;
+      LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %d", cnt, i);
 
       (void) sem_wait(&(awake->sems[rear]));
       return 0;
