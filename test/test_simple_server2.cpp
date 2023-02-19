@@ -165,13 +165,13 @@ void TestSimpleServer2Class::runClient() {
 int main() {
     TestSimpleServer2Class test;
     if (IS_SERVER) {
-        test.TestSimpleServer2(IsServer{}, 5, 1000, 50, 64, 50);
+        test.TestSimpleServer2(IsServer{}, 5, 1000, 50, 64, 500);
     } else {
         // node_num: 5
         // slot_size: 64
         // slot_num: 50
         // num_test_thread: 1000  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 1000 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 50, 64, 50, 1000, 1000);
+        test.TestSimpleServer2(IsClient{}, 50, 64, 500, 1000, 1000);
     }
 }
