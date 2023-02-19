@@ -934,12 +934,12 @@ RdmaServer<T>::~RdmaServer() {
     }
     delete[] this->rdma_queue_pairs;
     this->rdma_queue_pairs = nullptr;
-
-    delete this->locks;
-    this->locks = nullptr;
-
-    LOG_DEBUG("RdmaServer success to deconstruct, all resources including RDMA have been released");
   }
+  if (this->locks != nullptr) {
+    delete[] this->locks;
+    this->locks = nullptr;
+  }
+  LOG_DEBUG("RdmaServer success to deconstruct, all resources including RDMA have been released");
 }
 
 /** 
