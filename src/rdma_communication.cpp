@@ -99,8 +99,7 @@ int RdmaQueuePair::initializeLocalRdmaResource() {
   this->qp_psn = lrand48() & 0xffffff;
   
   /* Create MR */
-  mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE 
-             | IBV_ACCESS_REMOTE_ATOMIC;
+  mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE ;
   this->local_mr = ibv_reg_mr(this->pd, (void *)this->local_memory,
           this->local_memory_size, mr_flags);
   if (this->local_mr == nullptr) {
@@ -140,7 +139,7 @@ int RdmaQueuePair::modifyQPtoInit() {
   attr.qp_state = IBV_QPS_INIT;
   attr.port_num = this->rdma_port;
   attr.pkey_index = 0;
-  attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+  attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE;
   flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
   rc = ibv_modify_qp(qp, &attr, flags);
 
@@ -168,7 +167,8 @@ int RdmaQueuePair::modifyQPtoRTR() {
 
   flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN;
 
-  attr.max_dest_rd_atomic = 16;
+  // attr.max_dest_rd_atomic = 16;
+  attr.max_dest_rd_atomic = 1;
   attr.min_rnr_timer = 12;
   flags |= IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
   rc = ibv_modify_qp(qp, &attr, flags);
@@ -193,8 +193,9 @@ int RdmaQueuePair::modifyQPtoRTS() {
   attr.timeout = 14;
   attr.retry_cnt = 7;
   attr.rnr_retry = 7;
-  attr.max_rd_atomic = 16;
-  attr.max_dest_rd_atomic = 16;
+  // attr.max_rd_atomic = 16;
+  attr.max_rd_atomic = 1;
+
   flags |= IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC;
 
   rc = ibv_modify_qp(qp, &attr, flags);
