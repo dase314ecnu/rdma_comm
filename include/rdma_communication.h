@@ -690,7 +690,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
         //         slot_idx * this->slot_size;
         // zhouhuahui test
         char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory();
-        
+
         if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
           LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
           return;
@@ -1003,6 +1003,8 @@ template<typename T>
 int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx) {
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
   qp->SetSendContent((void *)0, 0, slot_idx);
+  // zhouhuahui test
+  LOG_DEBUG("RdmaServer receive thread of %lu, post response in slot of %lu", node_idx, slot_idx);
   return qp->PostSend(slot_idx, slot_idx);
 }
 
