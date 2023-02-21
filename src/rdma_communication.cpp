@@ -1066,6 +1066,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       {
         // 先清空pipe中的数据
         while (true) {
+          // 不要忘了先把this->listend_fd设置为非阻塞
           int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
           if (r > 0) {
             continue;
@@ -1152,6 +1153,9 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
     if (ret != 0) {
       throw std::bad_exception();
     }
+    // 设置this->listend_fd[i][1]为非阻塞
+    int flags = fcntl(this->listen_fd[i][1], F_GETFL, 0);
+    (void) fcntl(this->listen_fd[i][1] , F_SETFL , flags | O_NONBLOCK);
   }
 }
 
