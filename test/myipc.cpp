@@ -14,17 +14,17 @@ MySharedMemory::~MySharedMemory() {
 
 char* MySharedMemory::CreateSharedMemory(size_t size) {
   if ((this->key = ftok("./", 2023)) == -1) {
-    LOG_DEBUG("MySharedMemory failed to ftok, errno is", errno);
+    LOG_DEBUG("MySharedMemory failed to ftok, errno is %d", errno);
     return nullptr;
   }
   // 创建共享内存
   if ((this->shmid = shmget(this->key, size, IPC_CREAT | 0666)) < 0) {
-    LOG_DEBUG("MySharedMemory failed to shmget, errno is", errno);
+    LOG_DEBUG("MySharedMemory failed to shmget, errno is %d", errno);
     return nullptr;
   }
   // 映射
   if ((this->shmadd = (char *)shmat(shmid, nullptr, 0)) < 0) {
-    LOG_DEBUG("MySharedMemory failed to shmat, errno is", errno);
+    LOG_DEBUG("MySharedMemory failed to shmat, errno is %d", errno);
     return nullptr;
   }
 
