@@ -25,7 +25,8 @@ int WaitSet::addFd(int fd) {
   epoll_event event;
   event.data.fd = fd;
   // 使用边缘触发
-  event.events = EPOLLIN | EPOLLET; 
+  // event.events = EPOLLIN | EPOLLET; 
+  event.events = EPOLLIN;
   // 将fd设置为non-blocking
   int old_option = fcntl(fd, F_GETFL);
   int new_option = old_option | O_NONBLOCK;
