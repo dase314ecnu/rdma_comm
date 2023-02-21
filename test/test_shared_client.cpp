@@ -19,9 +19,9 @@ void TestSharedClientClass::runClient() {
         LOG_DEBUG("TestSharedClient pass");
     });
     
-    MySharedMemory myshm;
-    _shared_memory = myshm.CreateSharedMemory(SharedRdmaClient::GetSharedObjSize(_slot_size, 
+    MySharedMemory myshm(SharedRdmaClient::GetSharedObjSize(_slot_size, 
             _slot_num, _node_num));
+    _shared_memory = myshm.GetSharedMemory();
     if (_shared_memory == nullptr) {
         LOG_DEBUG("TestSharedClient failed to create shared memory");
         return;
