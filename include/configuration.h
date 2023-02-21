@@ -11,6 +11,7 @@
 // for test
 #define IS_SERVER (1)   // 是否是RdmaServer
 #define SERVER_IP ("49.52.27.135")  //RdmaServer的地址
+#define TEST_SHARED_CLIENT
 
 
 /** 

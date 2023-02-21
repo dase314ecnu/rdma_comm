@@ -404,12 +404,10 @@ public:
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
+     * 这个函数和SharedRdmaClient(), RdmaClient(), createRdmaQueuePairs()函数紧耦合了。
      */
     static uint64_t GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
-            uint32_t _node_num) 
-    {
-        return 0;
-    }
+            uint32_t _node_num);
 };
 
 

@@ -69,20 +69,20 @@ void TestSimpleServer2Class::runServer() {
     }
     catch (...)
     {
-        LOG_DEBUG("TestSimpleServer2 failed: failed to new RdmaServer<TestWorkerThreadpool>");
+        LOG_DEBUG("server failed: failed to new RdmaServer<TestWorkerThreadpool>");
         return;
     }
     // 启动RdmaServer
     if (simple_server->Run() != 0)
     {
-        LOG_DEBUG("TestSimpleServer2 failed: failed to Run RdmaServer");
+        LOG_DEBUG("server failed: failed to Run RdmaServer");
         return;
     }
 
     worker_threadpool->SetSimpleServer(simple_server);
     // 启动工作线程池
     if (worker_threadpool->Run() != 0) {
-        LOG_DEBUG("TestSimpleServer2 failed: failed to Run TestWorkerThreadpool");
+        LOG_DEBUG("server failed: failed to Run TestWorkerThreadpool");
     }
 
     // 注册一个信号处理函数，当CTRL+C到来时，先将simple_server销毁，再将worker_threadpool销毁
@@ -162,6 +162,7 @@ void TestSimpleServer2Class::runClient() {
     }
 }
 
+#ifdef TEST_SIMPLE_SERVER2
 int main() {
     TestSimpleServer2Class test;
     if (IS_SERVER) {
@@ -177,6 +178,7 @@ int main() {
         test.TestSimpleServer2(IsClient{}, 5, 64, 500, 1000, 1000);
     }
 }
+#endif
 
 /**  
  * @todo: 为什么slot_num设置的过大，比如500，会造成wc.status出现错误码8和10

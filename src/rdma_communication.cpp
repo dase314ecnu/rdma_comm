@@ -986,18 +986,21 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   ZSend   *send    = &this->sends[node_idx];
   ZAwake  *awake   = &this->awakes[node_idx];
   char     tmp_buf[1024];
+  uint64_t send_cnt = 0;  // 成功发送消息的个数
+
+  SCOPEEXIT([&]() {
+    if (waitset != nullptr) {
+      delete waitset;
+      waitset = nullptr;
+    }
+    this->stop = true;
+  });
+
   try {
     waitset = new WaitSet();
   } catch (...) {
     return;
   }
-  SCOPEEXIT([&]() {
-    if (waitset != nullptr) {
-      delete waitset;
-      waitset = nullptr;
-      this->stop = true;
-    }
-  });
   
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
   rc = waitset->addFd(qp->GetChannel()->fd);
@@ -1033,6 +1036,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
+          if (qp->PostReceive() != 0) {
+            return;
+          }
           uint64_t slot_idx = wc.imm_data;
           (void) sem_post(&(awake->sems[slot_idx]));
           (void) pthread_spin_lock(send->spinlock);
@@ -1046,11 +1052,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             }
             send->front = p;
           }
-          if (qp->PostReceive() != 0) {
-            (void) pthread_spin_unlock(send->spinlock);
-            return;
-          }
           (void) pthread_spin_unlock(send->spinlock);
+        } else {
+          send_cnt++;
+          LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
     } else if (event.data.fd == this->listen_fd[node_idx][1]) {
@@ -1100,7 +1105,7 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
             : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
                          _node_num, _shared_memory)
 {
-  LOG_DEBUG("Start to construct SharedRdmaClient\n");
+  LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
 
   int i = 0;
   SCOPEEXIT([&]() {
@@ -1122,7 +1127,7 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
       this->listen_fd = nullptr;
     }
 
-    LOG_DEBUG("End to construct the SharedRdmaClient\n");
+    LOG_DEBUG("SharedRdmaClient End to construct the SharedRdmaClient\n");
   });
 
   this->use_shared_memory = true;
@@ -1248,6 +1253,22 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
     }
     usleep(100);
   }
+}
+
+uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
+            uint32_t _node_num) 
+{
+  uint64_t size = 0;
+  size += sizeof(SharedRdmaClient);
+  size += sizeof(ZSend) * _node_num;
+  size += (sizeof(SlotState) * (_slot_num + 1) + sizeof(pthread_spinlock_t)) * _node_num;
+  size += sizeof(ZAwake) * _node_num;
+  size += (sizeof(sem_t) * (_slot_num + 1)) * _node_num;
+  size += sizeof(RdmaQueuePair *) * _node_num;
+  // _slot_size * (_slot_num + 1)是注册内存的大小
+  size += (sizeof(RdmaQueuePair) + _slot_size * (_slot_num + 1)) * _node_num;
+
+  return size * 2; // 多申请一些，防止越界。
 }
 
 

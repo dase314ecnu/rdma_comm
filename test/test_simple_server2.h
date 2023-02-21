@@ -25,11 +25,11 @@ public:
     void TestSimpleServer2(IsClient, uint32_t node_num, uint32_t slot_size, uint32_t slot_num, 
             uint32_t num_test_thread, uint32_t reqs_per_test_thread);
 
-private:
-    void runServer();
-    void runClient();
+protected:
+    virtual void runServer();
+    virtual void runClient();
 
-private:
+protected:
     uint32_t _worker_num = 0;
     uint32_t _max_msg_num = 0;
     uint32_t _node_num = 0;
