@@ -1251,7 +1251,10 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
       if (rc <= 0) {
         return -1;
       }
+      // zhouhuahui test
+      LOG_DEBUG("sem_wait begin");
       (void) sem_wait(&(zawake->sems[rear]));
+      LOG_DEBUG("sem_wait end");
       return 0;
     }
     usleep(100);
