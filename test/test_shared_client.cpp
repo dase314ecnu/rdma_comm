@@ -11,13 +11,16 @@ void TestSharedClientClass::runClient() {
     std::string remote_ip = SERVER_IP; 
     int remote_port = 21001;
     SharedRdmaClient *rdma_client = nullptr;
+    bool is_father = true;
     
     SCOPEEXIT([&]() {
-        if (rdma_client != nullptr) {
-            delete rdma_client;
-        }
+        if (is_father) {
+            if (rdma_client != nullptr) {
+                rdma_client->Destroy();
+            }
 
-        LOG_DEBUG("TestSharedClient pass");
+            LOG_DEBUG("TestSharedClient pass");
+        }
     });
     
     MySharedMemory myshm(SharedRdmaClient::GetSharedObjSize(_slot_size, 
@@ -61,6 +64,7 @@ void TestSharedClientClass::runClient() {
         int ret = fork();
         assert(ret >= 0);
         if (ret == 0) {
+            is_father = false;
             func();
             return;
         }
