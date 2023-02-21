@@ -1066,8 +1066,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       {
         // 先清空pipe中的数据
         while (true) {
+          // zhouhuahui test
+          LOG_DEBUG("recv start");
           // 不要忘了先把this->listend_fd设置为非阻塞
           int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
+          LOG_DEBUG("recv end");
           if (r > 0) {
             continue;
           } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
@@ -1255,10 +1258,7 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
       if (rc <= 0) {
         return -1;
       }
-      // zhouhuahui test
-      LOG_DEBUG("sem_wait begin");
       (void) sem_wait(&(zawake->sems[rear]));
-      LOG_DEBUG("sem_wait end");
       return 0;
     }
     usleep(100);
