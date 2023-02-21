@@ -1,4 +1,5 @@
-#include "assert.h"
+#include <assert.h>
+#include <sys/wait.h>
 
 #include "test/test_shared_client.h"
 #include "test/test_worker_threadpool.h"
@@ -51,13 +52,23 @@ void TestSharedClientClass::runClient() {
             rdma_client->PostRequest((void *)send_buf, length);
         }
     };
+
+    if (rdma_client->Run() != 0) {
+        LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
+    }
     
     for (uint32_t i = 0; i < _num_test_thread; ++i) {
         int ret = fork();
         assert(ret >= 0);
         if (ret == 0) {
             func();
+            return;
         }
+    }
+
+    for (uint32_t i = 0; i < _num_test_thread; ++i) {
+        int status;
+        wait(&status);
     }
 }
 
