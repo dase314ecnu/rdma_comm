@@ -1056,7 +1056,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->front = p;
           }
           // zhouhuahui test
-          LOG_DEBUG("afther processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu ", 
+          LOG_DEBUG("afther processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
                 "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
                 send->rear, send->notsent_rear);
           (void) pthread_spin_unlock(send->spinlock);
