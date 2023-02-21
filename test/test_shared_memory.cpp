@@ -131,10 +131,13 @@ void* TestSharedMemoryWorker(void* arg) {
   return args;
 }
 
+#ifdef TEST_SHARED_MEMORY
 int main() {
   TestSharedMemoryClass test;
   test.TestSharedMemory();
 }
+
+#endif
 
 /** 
  * 问题:
