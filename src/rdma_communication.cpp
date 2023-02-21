@@ -989,11 +989,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   uint64_t send_cnt = 0;  // 成功发送消息的个数
 
   SCOPEEXIT([&]() {
+    this->stop = true;
     if (waitset != nullptr) {
       delete waitset;
       waitset = nullptr;
     }
-    this->stop = true;
+    LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, will retire", node_idx);
   });
 
   try {
@@ -1037,13 +1038,15 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           if (qp->PostReceive() != 0) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                    "after a IBV_WC_RECV_RDMA_WITH_IMMed wc", node_idx);
             return;
           }
           uint64_t slot_idx = wc.imm_data;
           (void) sem_post(&(awake->sems[slot_idx]));
           (void) pthread_spin_lock(send->spinlock);
+          send->states[slot_idx] = SlotState::SLOT_IDLE;
           if (slot_idx == send->front) {
-            send->states[slot_idx] = SlotState::SLOT_IDLE;
             uint64_t p = slot_idx;
             while (p != send->notsent_front
                     && send->states[p] == SlotState::SLOT_IDLE) 
