@@ -145,7 +145,10 @@ void TestSimpleServerClass::runClient()
     LOG_DEBUG("TestSimpleServer pass");
 }
 
+#ifdef TEST_SIMPLE_SERVER
 int main() {
     TestSimpleServerClass test;
     test.TestSimpleServer(IS_SERVER);
 }
+
+#endif
