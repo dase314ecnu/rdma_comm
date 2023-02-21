@@ -15,7 +15,9 @@ MySharedMemory::~MySharedMemory() {
 char* MySharedMemory::CreateSharedMemory(size_t size) {
   LOG_DEBUG("MySharedMemory will create shared memory of %lu kB", size / 1024);
   
-  if ((this->key = ftok("./", 2023)) == -1) {
+  this->size = size;
+
+  if ((this->key = ftok("./", 1000)) == -1) {
     LOG_DEBUG("MySharedMemory failed to ftok, errno is %d", errno);
     return nullptr;
   }

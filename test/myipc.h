@@ -9,10 +9,10 @@
 
 class MySharedMemory {
 private:
-  int     shmid;
-  key_t   key;
-  char   *shmadd;
-  size_t  size;
+  int     shmid = 0;
+  key_t   key = 0;
+  char   *shmadd = nullptr;
+  size_t  size = 0;
 
 public:
   MySharedMemory(size_t size = 1024);
