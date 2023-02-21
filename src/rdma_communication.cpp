@@ -1055,6 +1055,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             }
             send->front = p;
           }
+          // zhouhuahui test
+          LOG_DEBUG("afther processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu ", 
+                "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
+                send->rear, send->notsent_rear);
           (void) pthread_spin_unlock(send->spinlock);
         } else {
           send_cnt++;
@@ -1066,11 +1070,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       {
         // 先清空pipe中的数据
         while (true) {
-          // zhouhuahui test
-          LOG_DEBUG("recv start");
           // 不要忘了先把this->listend_fd设置为非阻塞
           int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
-          LOG_DEBUG("recv end");
           if (r > 0) {
             continue;
           } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
@@ -1086,6 +1087,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       while (slot_idx != send->notsent_rear) {
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
         if (rc != 0) {
+          (void) pthread_spin_unlock(send->spinlock);
           return;
         }
         slot_idx = (slot_idx + 1) % (this->slot_num + 1);
@@ -1156,9 +1158,6 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
     if (ret != 0) {
       throw std::bad_exception();
     }
-    // 设置this->listend_fd[i][1]为非阻塞
-    int flags = fcntl(this->listen_fd[i][1], F_GETFL, 0);
-    (void) fcntl(this->listen_fd[i][1] , F_SETFL , flags | O_NONBLOCK);
   }
 }
 
