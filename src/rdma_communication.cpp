@@ -1022,13 +1022,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    // zhouhuahui test
-    // if (rc <= 0) {
-    //   continue;
-    // }
+    if (rc <= 0) {
+      continue;
+    }
     
-    if (true) {
-    // if (event.data.fd == qp->GetChannel()->fd) {
+    if (event.data.fd == qp->GetChannel()->fd) {
       std::vector<struct ibv_wc> wcs;
       rc = qp->PollCompletionsFromCQ(wcs);
       if (rc < 0) {
@@ -1038,6 +1036,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       for (int i = 0; i < rc; ++i) {
         struct ibv_wc &wc = wcs[i];
         if (wc.status != IBV_WC_SUCCESS) {
+          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, get a wrong wc "
+                  ", wc.status is %d", node_idx, wc.status);
           return;
         }
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
@@ -1070,9 +1070,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
-    } 
-    if (true) {
-    // else if (event.data.fd == this->listen_fd[node_idx][1]) {
+    } else if (event.data.fd == this->listen_fd[node_idx][1]) {
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
@@ -1106,11 +1104,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
 
-    } 
-    // else {
-    //   /* can not reach here */
-    //   return;
-    // }
+    } else {
+      /* can not reach here */
+      return;
+    }
   }
 }
 
