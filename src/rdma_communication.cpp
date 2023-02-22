@@ -1021,149 +1021,98 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     while (1) {}
   }
 
-  // while (!this->stop) {
-  //   epoll_event event;
-  //   rc = waitset->waitSetWait(&event);
-  //   if (rc < 0 && errno != EINTR) {
-  //     return;
-  //   }
-  //   if (rc <= 0) {
-  //     continue;
-  //   }
-    
-  //   if (event.data.fd == qp->GetChannel()->fd) {
-  //     std::vector<struct ibv_wc> wcs;
-  //     rc = qp->PollCompletionsFromCQ(wcs);
-  //     if (rc < 0) {
-  //       return;
-  //     }
-
-  //     for (int i = 0; i < rc; ++i) {
-  //       struct ibv_wc &wc = wcs[i];
-  //       if (wc.status != IBV_WC_SUCCESS) {
-  //         LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, get a wrong wc "
-  //                 ", wc.status is %d", node_idx, wc.status);
-  //         return;
-  //       }
-  //       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-  //         // 接收到回复
-  //         uint64_t slot_idx = wc.imm_data;
-  //         if (qp->PostReceive() != 0) {
-  //           LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
-  //                   "before posting a send request", node_idx);
-  //           return;
-  //         }
-  //         // zhouhuahui test
-  //         LOG_DEBUG("get response of slot: %lu", slot_idx);
-  //         (void) sem_post(&(awake->sems[slot_idx]));
-  //         (void) pthread_spin_lock(send->spinlock);
-  //         send->states[slot_idx] = SlotState::SLOT_IDLE;
-  //         if (slot_idx == send->front) {
-  //           uint64_t p = slot_idx;
-  //           while (p != send->notsent_front
-  //                   && send->states[p] == SlotState::SLOT_IDLE) 
-  //           {
-  //             p = (p + 1) % (this->slot_num + 1);
-  //           }
-  //           send->front = p;
-  //         }
-  //         // zhouhuahui test
-  //         LOG_DEBUG("afther processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
-  //               "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-  //               send->rear, send->notsent_rear);
-  //         (void) pthread_spin_unlock(send->spinlock);
-  //       } else {
-  //         send_cnt++;
-  //         LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
-  //       }
-  //     }
-  //   } else if (event.data.fd == this->listen_fd[node_idx][1]) {
-  //     // 需要发送slot中的数据
-  //     {
-  //       // 先清空pipe中的数据
-  //       while (true) {
-  //         // 不要忘了先把this->listend_fd设置为非阻塞
-  //         int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
-  //         if (r > 0) {
-  //           continue;
-  //         } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
-  //           return;
-  //         } else {
-  //           break;
-  //         }
-  //       }
-  //     }
-
-  //     (void) pthread_spin_lock(send->spinlock);
-  //     uint64_t slot_idx = send->notsent_front;
-  //     while (slot_idx != send->notsent_rear) {
-  //       rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
-  //       if (rc != 0) {
-  //         (void) pthread_spin_unlock(send->spinlock);
-  //         return;
-  //       }
-  //       slot_idx = (slot_idx + 1) % (this->slot_num + 1);
-  //     }
-  //     send->notsent_front = send->notsent_rear;
-  //     // zhouhuahui test
-  //     LOG_DEBUG("afther processing a sending, qp[%u]: front: %lu, notsent_front: %lu "
-  //           "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-  //           send->rear, send->notsent_rear);
-  //     (void) pthread_spin_unlock(send->spinlock);
-  //   } else {
-  //     /* can not reach here */
-  //     return;
-  //   }
-  // }
-
-
-  // zhouhuahui test
   while (!this->stop) {
     epoll_event event;
     rc = waitset->waitSetWait(&event);
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    // if (rc <= 0) {
-    //   continue;
-    // }
-
-    std::vector<struct ibv_wc> wcs;
-    rc = qp->PollCompletionsFromCQ(wcs);
-    if (rc < 0) {
-      return;
+    if (rc <= 0) {
+      continue;
     }
-
-    for (int i = 0; i < rc; ++i) {
-      struct ibv_wc &wc = wcs[i];
-      if (wc.status != IBV_WC_SUCCESS) {
-        LOG_DEBUG("CommonRdmaClient send thread of %u, get a failed work completion"
-                ", wc.status is %d", node_idx, wc.status);
+    
+    if (event.data.fd == qp->GetChannel()->fd) {
+      std::vector<struct ibv_wc> wcs;
+      rc = qp->PollCompletionsFromCQ(wcs);
+      if (rc < 0) {
         return;
       }
-      if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
-        // 接收到回复
-        uint64_t slot_idx = wc.imm_data;
-        if (qp->PostReceive() != 0) {
+
+      for (int i = 0; i < rc; ++i) {
+        struct ibv_wc &wc = wcs[i];
+        if (wc.status != IBV_WC_SUCCESS) {
+          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, get a wrong wc "
+                  ", wc.status is %d", node_idx, wc.status);
           return;
         }
-
-        (void) sem_post(&(awake->sems[slot_idx]));
-        (void) pthread_spin_lock(send->spinlock);
-        // slot_idx号的slot可以被标记为空闲了
-        send->states[slot_idx] = SlotState::SLOT_IDLE;
-        if (slot_idx == send->front) {
-          uint64_t p = slot_idx;
-          while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
-            p = (p + 1) % (this->slot_num + 1);
+        if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+          // 接收到回复
+          uint64_t slot_idx = wc.imm_data;
+          if (qp->PostReceive() != 0) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                    "before posting a send request", node_idx);
+            return;
           }
-          send->front = p;
+          // zhouhuahui test
+          LOG_DEBUG("get response of slot: %lu", slot_idx);
+          (void) sem_post(&(awake->sems[slot_idx]));
+          (void) pthread_spin_lock(send->spinlock);
+          send->states[slot_idx] = SlotState::SLOT_IDLE;
+          if (slot_idx == send->front) {
+            uint64_t p = slot_idx;
+            while (p != send->notsent_front
+                    && send->states[p] == SlotState::SLOT_IDLE) 
+            {
+              p = (p + 1) % (this->slot_num + 1);
+            }
+            send->front = p;
+          }
+          // zhouhuahui test
+          LOG_DEBUG("afther processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
+                "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
+                send->rear, send->notsent_rear);
+          (void) pthread_spin_unlock(send->spinlock);
+        } else {
+          send_cnt++;
+          LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
-        (void) pthread_spin_unlock(send->spinlock);
-      } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-        send_cnt++;
-        LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
       }
+    } else if (event.data.fd == this->listen_fd[node_idx][1]) {
+      // 需要发送slot中的数据
+      {
+        // 先清空pipe中的数据
+        while (true) {
+          // 不要忘了先把this->listend_fd设置为非阻塞
+          int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
+          if (r > 0) {
+            continue;
+          } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
+            return;
+          } else {
+            break;
+          }
+        }
+      }
+
+      (void) pthread_spin_lock(send->spinlock);
+      uint64_t slot_idx = send->notsent_front;
+      while (slot_idx != send->notsent_rear) {
+        rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
+        if (rc != 0) {
+          (void) pthread_spin_unlock(send->spinlock);
+          return;
+        }
+        slot_idx = (slot_idx + 1) % (this->slot_num + 1);
+      }
+      send->notsent_front = send->notsent_rear;
+      // zhouhuahui test
+      LOG_DEBUG("afther processing a sending, qp[%u]: front: %lu, notsent_front: %lu "
+            "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
+            send->rear, send->notsent_rear);
+      (void) pthread_spin_unlock(send->spinlock);
+    } else {
+      /* can not reach here */
+      return;
     }
   }
 }
