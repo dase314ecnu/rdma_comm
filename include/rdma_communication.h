@@ -612,6 +612,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   
   // 统计信息，接收请求的数量
   uint64_t receive_cnt = 0;
+  uint64_t send_cnt = 0;
   WaitSet *waitset = nullptr;
   SCOPEEXIT([&]() {
     if (waitset != nullptr) {
@@ -693,6 +694,11 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
         }
         // 调用工作线程池的接口，将请求发给工作线程池进行处理
         this->worker_threadpool->Start(buf, node_idx, slot_idx);
+      } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
+        // zhouhuahui test
+        send_cnt++;
+        LOG_DEBUG("RdmaServer receive thread of %u, have sent %lu responses", 
+          node_idx, send_cnt);
       }
     }
   }
