@@ -1026,7 +1026,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       continue;
     }
     
-    if (event.data.fd == qp->GetChannel()->fd) {
+    {
+    // if (event.data.fd == qp->GetChannel()->fd) {
       std::vector<struct ibv_wc> wcs;
       rc = qp->PollCompletionsFromCQ(wcs);
       if (rc < 0) {
@@ -1072,7 +1073,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
-    } else if (event.data.fd == this->listen_fd[node_idx][1]) {
+    } 
+
+    {
+    // else if (event.data.fd == this->listen_fd[node_idx][1]) {
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
@@ -1105,10 +1109,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
             send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
-    } else {
-      /* can not reach here */
-      return;
-    }
+    } 
+    
+    // else {
+    //   /* can not reach here */
+    //   return;
+    // }
   }
 }
 
