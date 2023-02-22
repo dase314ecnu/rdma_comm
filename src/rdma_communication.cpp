@@ -1018,7 +1018,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
 
   // zhouhuahui test
   if (node_idx != 0) {
-    return;
+    while (1) {}
   }
 
   // while (!this->stop) {
