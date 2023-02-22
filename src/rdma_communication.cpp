@@ -75,8 +75,8 @@ int RdmaQueuePair::initializeLocalRdmaResource() {
   }
 
   if (this->cq == nullptr) {
-    // CQ占满的情况是：发送了最大量的消息，接收了最大量的消息 zhouhuahui test
-    this->cq = ibv_create_cq(this->ctx, this->local_slot_num * 3, nullptr, 
+    // CQ占满的情况是：发送了最大量的消息，接收了最大量的消息 
+    this->cq = ibv_create_cq(this->ctx, this->local_slot_num * 2, nullptr, 
             this->channel, 0);
     if (this->cq == nullptr) {
       return -1;
@@ -1043,6 +1043,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
+          if (qp->PostReceive() != 0) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                    "before posting a send request", node_idx);
+            return;
+          }
           // zhouhuahui test
           LOG_DEBUG("get response of slot: %lu", slot_idx);
           (void) sem_post(&(awake->sems[slot_idx]));
@@ -1087,11 +1092,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       (void) pthread_spin_lock(send->spinlock);
       uint64_t slot_idx = send->notsent_front;
       while (slot_idx != send->notsent_rear) {
-        if (qp->PostReceive() != 0) {
-          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
-                  "before posting a send request", node_idx);
-          return;
-        }
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);
