@@ -335,7 +335,8 @@ int RdmaQueuePair::PostReceive() {
 
   memset(&sg, 0, sizeof(sg));
   sg.addr   = (uintptr_t)this->local_memory;
-  sg.length = 0;   // because of IBV_WR_RDMA_WRITE_WITH_IMM,
+  // zhouhuahui test
+  sg.length = 1;   // because of IBV_WR_RDMA_WRITE_WITH_IMM,
                    // we don't need to worry about the recv buffer
   sg.lkey   = this->local_mr->lkey;
 
@@ -1043,12 +1044,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
-          for (int k = 0; k < 10; ++k) {
-            if (qp->PostReceive() != 0) {
-              LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
-                      "before posting a send request", node_idx);
-              return;
-            }
+          if (qp->PostReceive() != 0) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                    "after receiving a recv wc", node_idx);
+            return;
           }
           
           // zhouhuahui test
