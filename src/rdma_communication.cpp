@@ -1011,11 +1011,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   if (rc != 0) {
     return;
   }
-  // zhouhuahui test
-  // rc = waitset->addFd(this->listen_fd[node_idx][1]);
-  // if (rc != 0) {
-  //   return;
-  // }
+  rc = waitset->addFd(this->listen_fd[node_idx][1]);
+  if (rc != 0) {
+    return;
+  }
 
   while (!this->stop) {
     epoll_event event;
@@ -1023,10 +1022,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    // zhouhuahui test
-    // if (rc <= 0) {
-    //   continue;
-    // }
+    if (rc <= 0) {
+      continue;
+    }
     
     if (event.data.fd == qp->GetChannel()->fd) {
       std::vector<struct ibv_wc> wcs;
@@ -1069,24 +1067,21 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
-    } 
-    // zhouhuahui test
-    {
-    // else if (event.data.fd == this->listen_fd[node_idx][1]) {
+    } else if (event.data.fd == this->listen_fd[node_idx][1]) {
       // 需要发送slot中的数据
       {
-        // // 先清空pipe中的数据
-        // while (true) {
-        //   // 不要忘了先把this->listend_fd设置为非阻塞
-        //   int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
-        //   if (r > 0) {
-        //     continue;
-        //   } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
-        //     return;
-        //   } else {
-        //     break;
-        //   }
-        // }
+        // 先清空pipe中的数据
+        while (true) {
+          // 不要忘了先把this->listend_fd设置为非阻塞
+          int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
+          if (r > 0) {
+            continue;
+          } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
+            return;
+          } else {
+            break;
+          }
+        }
       }
 
       (void) pthread_spin_lock(send->spinlock);
@@ -1110,13 +1105,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
             send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
-
-    } 
-    // zhouhuahui test
-    // else {
-    //   /* can not reach here */
-    //   return;
-    // }
+    } else {
+      /* can not reach here */
+      return;
+    }
   }
 }
 
