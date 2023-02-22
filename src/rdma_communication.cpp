@@ -118,7 +118,7 @@ int RdmaQueuePair::createQueuePair() {
   attr.send_cq = this->cq;
   attr.recv_cq = this->cq;
   attr.cap.max_send_wr = this->local_slot_num;
-  attr.cap.max_recv_wr = this->local_slot_num * 2;
+  attr.cap.max_recv_wr = this->local_slot_num * 3; // zhouhuahui test
   attr.cap.max_send_sge = 2;
   attr.cap.max_recv_sge = 1;
   attr.cap.max_inline_data = 0;
@@ -396,7 +396,7 @@ int RdmaQueuePair::ReadyToUseQP() {
     return -1;
   }
   // zhouhuahui test
-  for (int i = 0; i < this->local_slot_num; ++i) {
+  for (int i = 0; i < this->local_slot_num * 2; ++i) {
     if (this->PostReceive() != 0) {
       LOG_DEBUG("RdmaQueuePair failed to post %d receives in qp", i);
       return -1;
