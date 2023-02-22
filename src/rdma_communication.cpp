@@ -671,8 +671,6 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
     throw std::bad_exception();
   }
   for (int i = 0; i < this->node_num; ++i) {
-    // ZSend tmp = ZSend(nullptr, this->slot_num);
-    // this->sends[i] = tmp;
     new (&this->sends[i]) ZSend(nullptr, this->slot_num);
   }
 
@@ -683,7 +681,6 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   for (int i = 0; i < this->node_num; ++i) {
     try {
       new (&this->awakes[i]) ZAwake(nullptr, this->slot_num);
-      // this->awakes[i] = ZAwake(nullptr, this->slot_num);
     } catch (...) {
       throw std::bad_exception();
     }
@@ -710,7 +707,8 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   scratch += sizeof(ZSend) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
     try {
-      this->sends[i] = ZSend(scratch, this->slot_num);
+      // this->sends[i] = ZSend(scratch, this->slot_num);
+      new (&this->sends[i]) ZSend(scratch, this->slot_num);
       scratch += sizeof(SlotState) * (this->slot_num + 1) + sizeof(pthread_spinlock_t);
     } catch (...) {
       throw std::bad_exception();
@@ -721,7 +719,8 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   scratch += sizeof(ZAwake) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
     try {
-      this->awakes[i] = ZAwake(scratch, this->slot_num);
+      // this->awakes[i] = ZAwake(scratch, this->slot_num);
+      new (&this->awakes[i]) ZAwake(scratch, this->slot_num);
       scratch += sizeof(sem_t) * (this->slot_num + 1);
     } catch (...) {
       throw std::bad_exception();

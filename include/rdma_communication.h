@@ -81,7 +81,7 @@ typedef struct ZSend {
         }
         // 给this->states分配空间并初始化
         if (shared != 0) {
-            this->states  = (SlotState *)scratch;
+            this->states = (SlotState *)scratch;
         } else {
             this->states = new SlotState[_slot_num + 1];
             if (this->states == nullptr) {

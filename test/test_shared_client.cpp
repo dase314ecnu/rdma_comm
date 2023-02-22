@@ -52,6 +52,7 @@ void TestSharedClientClass::runClient() {
         memcpy(pointer, content, strlen(content) + 1);
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
+            // zhouhuahui test
             LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
             rdma_client->PostRequest((void *)send_buf, length);
             LOG_DEBUG("test_process of %u has sent %dth(from 0) msg", test_process_idx, j);
