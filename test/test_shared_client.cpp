@@ -42,7 +42,7 @@ void TestSharedClientClass::runClient() {
     }
     
     // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
-    auto func = [&] () {
+    auto func = [&] (uint32_t test_process_idx) {
         char content[20] = "zhouhuahui";
         int length = sizeof(int) + strlen(content) + 1;
         char send_buf[1000];
@@ -51,8 +51,10 @@ void TestSharedClientClass::runClient() {
         pointer += sizeof(int);
         memcpy(pointer, content, strlen(content) + 1);
         
-        for (int i = 0; i < this->_reqs_per_test_thread; ++i) {
+        for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
+            LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
             rdma_client->PostRequest((void *)send_buf, length);
+            LOG_DEBUG("test_process of %u has sent %dth(from 0) msg", test_process_idx, j);
         }
     };
 
@@ -65,7 +67,7 @@ void TestSharedClientClass::runClient() {
         assert(ret >= 0);
         if (ret == 0) {
             is_father = false;
-            func();
+            func(i);
             return;
         }
     }
