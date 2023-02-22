@@ -137,7 +137,7 @@ void TestWorkerThreadpool::workerThreadFun() {
             }
         }
     }
-    LOG_DEBUG("TestWorkerThreadpool worker thread will retire, have processed %lld requests", req_cnt);
+    LOG_DEBUG("TestWorkerThreadpool worker thread will retire, have processed %lu requests", req_cnt);
 }
 
 void *TestWorkerThreadpool::workerThreadFunEntry(void *arg) {

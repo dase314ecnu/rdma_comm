@@ -1047,6 +1047,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             return;
           }
           uint64_t slot_idx = wc.imm_data;
+          // zhouhuahui test
+          LOG_DEBUG("get response of slot: %lu", slot_idx);
           (void) sem_post(&(awake->sems[slot_idx]));
           (void) pthread_spin_lock(send->spinlock);
           send->states[slot_idx] = SlotState::SLOT_IDLE;
