@@ -1011,10 +1011,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   if (rc != 0) {
     return;
   }
-  rc = waitset->addFd(this->listen_fd[node_idx][1]);
-  if (rc != 0) {
-    return;
-  }
+  // zhouhuahui test
+  // rc = waitset->addFd(this->listen_fd[node_idx][1]);
+  // if (rc != 0) {
+  //   return;
+  // }
 
   while (!this->stop) {
     epoll_event event;
@@ -1022,9 +1023,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    if (rc <= 0) {
-      continue;
-    }
+    // zhouhuahui test
+    // if (rc <= 0) {
+    //   continue;
+    // }
     
     if (event.data.fd == qp->GetChannel()->fd) {
       std::vector<struct ibv_wc> wcs;
@@ -1067,7 +1069,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
-    } else if (event.data.fd == this->listen_fd[node_idx][1]) {
+    } 
+    // zhouhuahui test
+    {
+    // else if (event.data.fd == this->listen_fd[node_idx][1]) {
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
@@ -1106,10 +1111,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
 
-    } else {
-      /* can not reach here */
-      return;
-    }
+    } 
+    // zhouhuahui test
+    // else {
+    //   /* can not reach here */
+    //   return;
+    // }
   }
 }
 
