@@ -1016,11 +1016,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     return;
   }
 
-  // zhouhuahui test
-  if (node_idx != 0) {
-    while (1) {}
-  }
-
   while (!this->stop) {
     epoll_event event;
     rc = waitset->waitSetWait(&event);
