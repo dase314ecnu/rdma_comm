@@ -1124,9 +1124,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    if (rc <= 0) {
-      continue;
-    }
+    // if (rc <= 0) {
+    //   continue;
+    // }
 
     std::vector<struct ibv_wc> wcs;
     rc = qp->PollCompletionsFromCQ(wcs);
