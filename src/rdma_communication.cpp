@@ -75,8 +75,8 @@ int RdmaQueuePair::initializeLocalRdmaResource() {
   }
 
   if (this->cq == nullptr) {
-    // CQ占满的情况是：发送了最大量的消息，接收了最大量的消息
-    this->cq = ibv_create_cq(this->ctx, this->local_slot_num * 2, nullptr, 
+    // CQ占满的情况是：发送了最大量的消息，接收了最大量的消息 zhouhuahui test
+    this->cq = ibv_create_cq(this->ctx, this->local_slot_num * 3, nullptr, 
             this->channel, 0);
     if (this->cq == nullptr) {
       return -1;
