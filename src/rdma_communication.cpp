@@ -1074,17 +1074,17 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
-        // while (true) {
-        //   // 不要忘了先把this->listend_fd设置为非阻塞
-        //   int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
-        //   if (r > 0) {
-        //     continue;
-        //   } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
-        //     return;
-        //   } else {
-        //     break;
-        //   }
-        // }
+        while (true) {
+          // 不要忘了先把this->listend_fd设置为非阻塞
+          int r = recv(this->listen_fd[node_idx][1], tmp_buf, 1024, 0);
+          if (r > 0) {
+            continue;
+          } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
+            return;
+          } else {
+            break;
+          }
+        }
       }
 
       (void) pthread_spin_lock(send->spinlock);
