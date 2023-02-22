@@ -396,7 +396,7 @@ int RdmaQueuePair::ReadyToUseQP() {
     return -1;
   }
   // zhouhuahui test
-  for (int i = 0; i < this->local_slot_num + 53; ++i) {
+  for (int i = 0; i < this->local_slot_num; ++i) {
     if (this->PostReceive() != 0) {
       LOG_DEBUG("RdmaQueuePair failed to post %d receives in qp", i);
       return -1;
@@ -1043,7 +1043,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
-          if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
+          if (qp->PostReceive() != 0) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
                     "before posting a send request", node_idx);
             return;
