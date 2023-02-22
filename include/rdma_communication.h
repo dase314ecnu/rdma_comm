@@ -615,6 +615,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   uint64_t send_cnt = 0;
   WaitSet *waitset = nullptr;
   SCOPEEXIT([&]() {
+    this->stop = true;
     if (waitset != nullptr) {
       delete waitset; 
       waitset = nullptr;

@@ -118,7 +118,7 @@ int RdmaQueuePair::createQueuePair() {
   attr.send_cq = this->cq;
   attr.recv_cq = this->cq;
   attr.cap.max_send_wr = this->local_slot_num;
-  attr.cap.max_recv_wr = this->local_slot_num;
+  attr.cap.max_recv_wr = this->local_slot_num * 2;
   attr.cap.max_send_sge = 2;
   attr.cap.max_recv_sge = 1;
   attr.cap.max_inline_data = 0;
@@ -192,7 +192,7 @@ int RdmaQueuePair::modifyQPtoRTS() {
 
   attr.timeout = 14;
   attr.retry_cnt = 7;
-  attr.rnr_retry = 6;
+  attr.rnr_retry = 7;
   // attr.max_rd_atomic = 16;
   attr.max_rd_atomic = 1;
 
@@ -1041,11 +1041,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
-          if (qp->PostReceive() != 0) {
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
-                    "after a IBV_WC_RECV_RDMA_WITH_IMMed wc", node_idx);
-            return;
-          }
+          // if (qp->PostReceive() != 0) {
+          //   LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+          //           "after a IBV_WC_RECV_RDMA_WITH_IMMed wc", node_idx);
+          //   return;
+          // }
           uint64_t slot_idx = wc.imm_data;
           // zhouhuahui test
           LOG_DEBUG("get response of slot: %lu", slot_idx);
@@ -1091,6 +1091,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       (void) pthread_spin_lock(send->spinlock);
       uint64_t slot_idx = send->notsent_front;
       while (slot_idx != send->notsent_rear) {
+        if (qp->PostReceive() != 0) {
+          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                  "before posting a send request", node_idx);
+          return;
+        }
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);

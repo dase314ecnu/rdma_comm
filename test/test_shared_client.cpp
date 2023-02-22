@@ -11,6 +11,7 @@ void TestSharedClientClass::runClient() {
     std::string remote_ip = SERVER_IP; 
     int remote_port = 21001;
     SharedRdmaClient *rdma_client = nullptr;
+    MySharedMemory *myshm = nullptr;
     bool is_father = true;
     
     SCOPEEXIT([&]() {
@@ -18,14 +19,18 @@ void TestSharedClientClass::runClient() {
             if (rdma_client != nullptr) {
                 rdma_client->Destroy();
             }
+            if (myshm != nullptr) {
+                delete myshm;
+                myshm = nullptr;
+            }
 
             LOG_DEBUG("TestSharedClient pass");
         }
     });
     
-    MySharedMemory myshm(SharedRdmaClient::GetSharedObjSize(_slot_size, 
+    myshm = new MySharedMemory(SharedRdmaClient::GetSharedObjSize(_slot_size, 
             _slot_num, _node_num));
-    _shared_memory = myshm.GetSharedMemory();
+    _shared_memory = myshm->GetSharedMemory();
     if (_shared_memory == nullptr) {
         LOG_DEBUG("TestSharedClient failed to create shared memory");
         return;
