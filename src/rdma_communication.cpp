@@ -396,7 +396,7 @@ int RdmaQueuePair::ReadyToUseQP() {
     return -1;
   }
   // zhouhuahui test
-  for (int i = 0; i < this->local_slot_num + 51; ++i) {
+  for (int i = 0; i < this->local_slot_num + 52; ++i) {
     if (this->PostReceive() != 0) {
       LOG_DEBUG("RdmaQueuePair failed to post %d receives in qp", i);
       return -1;
