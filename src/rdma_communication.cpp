@@ -1043,7 +1043,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
-          if (qp->PostReceive() != 0) {
+          if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
                     "before posting a send request", node_idx);
             return;
