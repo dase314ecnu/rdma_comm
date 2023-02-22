@@ -97,7 +97,7 @@ int main() {
         // slot_num: 50
         // num_test_thread: 1000  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 1000 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 5, 64, 130, 9, 20);
+        test.TestSimpleServer2(IsClient{}, 5, 64, 130, 1, 200);
     }
 }
 
