@@ -192,7 +192,7 @@ int RdmaQueuePair::modifyQPtoRTS() {
 
   attr.timeout = 14;
   attr.retry_cnt = 7;
-  attr.rnr_retry = 7;
+  attr.rnr_retry = 6;
   // attr.max_rd_atomic = 16;
   attr.max_rd_atomic = 1;
 
