@@ -1022,9 +1022,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     if (rc < 0 && errno != EINTR) {
       return;
     }
-    if (rc <= 0) {
-      continue;
-    }
+    // if (rc <= 0) {
+    //   continue;
+    // }
     
     {
     // if (event.data.fd == qp->GetChannel()->fd) {
