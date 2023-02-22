@@ -1087,11 +1087,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       (void) pthread_spin_lock(send->spinlock);
       uint64_t slot_idx = send->notsent_front;
       while (slot_idx != send->notsent_rear) {
-        if (qp->PostReceive() != 0) {
-          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
-                  "before posting a send request", node_idx);
-          return;
-        }
+        // zhouhuahui test
+        // if (qp->PostReceive() != 0) {
+        //   LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+        //           "before posting a send request", node_idx);
+        //   return;
+        // }
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);
