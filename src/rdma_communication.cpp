@@ -345,6 +345,7 @@ int RdmaQueuePair::PostReceive() {
   wr.sg_list = &sg;
   wr.num_sge = 1;
   if (ibv_post_recv(this->qp, &wr, &bad_wr) != 0) {
+    LOG_DEBUG("RdmaQueuePair::PostReceive() failed, errno is %d", errno);
     return -1;
   } else {
     return 0;
