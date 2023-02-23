@@ -335,7 +335,6 @@ int RdmaQueuePair::PostReceive() {
 
   memset(&sg, 0, sizeof(sg));
   sg.addr   = (uintptr_t)this->local_memory;
-  // zhouhuahui test
   sg.length = 0;   // because of IBV_WR_RDMA_WRITE_WITH_IMM,
                    // we don't need to worry about the recv buffer
   sg.lkey   = this->local_mr->lkey;
@@ -421,7 +420,6 @@ int RdmaQueuePair::ReadyToUseQP() {
     LOG_DEBUG("RdmaQueuePair failed to modify qp to init");
     return -1;
   }
-  // zhouhuahui test
   for (int i = 0; i < this->local_slot_num; ++i) {
     if (this->PostReceive() != 0) {
       LOG_DEBUG("RdmaQueuePair failed to post %d receives in qp", i);
@@ -472,13 +470,13 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
   });
   
   // zhouhuahui test
-  // if (shared_memory != nullptr) {
-  //   this->rdma_queue_pairs = (RdmaQueuePair **)scratch;
-  //   scratch += sizeof(RdmaQueuePair *) * this->node_num;
-  // } else {
-  //   this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
-  // }
-  this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
+  if (shared_memory != nullptr) {
+    this->rdma_queue_pairs = (RdmaQueuePair **)scratch;
+    scratch += sizeof(RdmaQueuePair *) * this->node_num;
+  } else {
+    this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
+  }
+  // this->rdma_queue_pairs = new RdmaQueuePair*[this->node_num];
 
   if (this->rdma_queue_pairs == nullptr) {
     return -1;
@@ -498,25 +496,25 @@ int RdmaClient::createRdmaQueuePairs(void *shared_memory, void **end_memory) {
       }
     } else {
       // zhouhuahui test
-      // this->rdma_queue_pairs[i] = (RdmaQueuePair *)scratch;
-      // try {
-      //   new (this->rdma_queue_pairs[i]) RdmaQueuePair(this->slot_num, 
-      //         this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
-      //         DEVICE_NAME, RDMA_PORT);
-      // } catch (...) {
-      //   LOG_DEBUG("RdmaQueuePair failed to new %d RdmaQueuePair in shared memory", i);
-      //   return -1;
-      // }
-      // scratch += (sizeof(RdmaQueuePair) + 
-      //         this->rdma_queue_pairs[i]->GetLocalMemorySize());
+      this->rdma_queue_pairs[i] = (RdmaQueuePair *)scratch;
       try {
-        this->rdma_queue_pairs[i] = new RdmaQueuePair(this->slot_num, this->slot_size, 
-              scratch, DEVICE_NAME, RDMA_PORT);
+        new (this->rdma_queue_pairs[i]) RdmaQueuePair(this->slot_num, 
+              this->slot_size, (void *)(scratch + sizeof(RdmaQueuePair)), 
+              DEVICE_NAME, RDMA_PORT);
       } catch (...) {
         LOG_DEBUG("RdmaQueuePair failed to new %d RdmaQueuePair in shared memory", i);
         return -1;
       }
-      scratch += this->rdma_queue_pairs[i]->GetLocalMemorySize();
+      scratch += (sizeof(RdmaQueuePair) + 
+              this->rdma_queue_pairs[i]->GetLocalMemorySize());
+      // try {
+      //   this->rdma_queue_pairs[i] = new RdmaQueuePair(this->slot_num, this->slot_size, 
+      //         scratch, DEVICE_NAME, RDMA_PORT);
+      // } catch (...) {
+      //   LOG_DEBUG("RdmaQueuePair failed to new %d RdmaQueuePair in shared memory", i);
+      //   return -1;
+      // }
+      // scratch += this->rdma_queue_pairs[i]->GetLocalMemorySize();
 
     }
     if (this->rdma_queue_pairs[i] == nullptr) {
