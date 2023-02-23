@@ -104,8 +104,12 @@ void TestSharedClientClass::runClient() {
     //     int status;
     //     wait(&status);
     // }
-
-    while (true) {} // zhouhuahui test
+    
+    // zhouhuahui test
+    if (rdma_client->Run() != 0) {
+        LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
+    }
+    while (true) {} 
 }
 
 #ifdef TEST_SHARED_CLIENT
