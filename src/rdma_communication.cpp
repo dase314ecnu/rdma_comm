@@ -1159,6 +1159,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     return;
   }
   while (!this->stop) {
+    epoll_event event;
+    rc = waitset->waitSetWait(&event);
+    if (rc < 0 && errno != EINTR) {
+      return;
+    }
     std::vector<struct ibv_wc> wcs;
     rc = qp->PollCompletionsFromCQ(wcs);
     for (int i = 0; i < rc; ++i) {
@@ -1176,7 +1181,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
                   "after receiving a recv wc", node_idx);
           return;
         }
-        (void) sem_post(&(awake->sems[slot_idx]));
         LOG_DEBUG("get response of slot: %lu", slot_idx);
         (void) pthread_spin_lock(send->spinlock);
         send->states[slot_idx] = SlotState::SLOT_IDLE;
