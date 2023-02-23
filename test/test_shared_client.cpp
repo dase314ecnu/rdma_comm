@@ -106,9 +106,6 @@ void TestSharedClientClass::runClient() {
     // }
     
     // zhouhuahui test
-    if (rdma_client->Run() != 0) {
-        LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
-    }
     for (uint32_t i = 0; i < 1; ++i) {
         int ret = fork();
         assert(ret >= 0);
@@ -132,6 +129,9 @@ void TestSharedClientClass::runClient() {
             }
             return;
         }
+    }
+    if (rdma_client->Run() != 0) {
+        LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
     }
     while (true) {} 
 }
