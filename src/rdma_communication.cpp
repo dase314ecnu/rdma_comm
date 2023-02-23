@@ -1156,9 +1156,13 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   // zhouhuahui test
   int test_send_cnt = 0;  // 已经post send了的数量，不一定成功
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
+  rc = waitset->addFd(qp->GetChannel()->fd);
+  if (rc != 0) {
+    return;
+  }
   while (!this->stop) {
     std::vector<struct ibv_wc> wcs;
-    rc = qp->TestPollCompletionsFromCQ(wcs);
+    rc = qp->PollCompletionsFromCQ(wcs);
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
       if (wc.status != IBV_WC_SUCCESS) {
