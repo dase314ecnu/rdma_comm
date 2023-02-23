@@ -401,7 +401,7 @@ int RdmaQueuePair::TestPollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs) {
   int            wc_num = 0;
   
   while (true) {
-    ret = ibv_poll_cq(ev_cq, 1, &wc);
+    ret = ibv_poll_cq(this->cq, 1, &wc);
     if (ret < 0) {
       return -1;
     }
