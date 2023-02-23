@@ -388,11 +388,15 @@ protected:
     static void *sendThreadFunEntry(void *arg);
 
 public:
-    /** 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
-     * 等拷贝到shared_memory共享内存中 */
+    /** 
+     * 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
+     * 等拷贝到shared_memory共享内存中 
+     * 
+     * _listen_fd: _node_num个socket pair
+     * */
     SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
             std::string _remote_ip, uint32_t _remote_port, 
-            uint32_t _node_num, void* _shared_memory);
+            uint32_t _node_num, void* _shared_memory, int **_listend_fd);
     ~SharedRdmaClient();
     /** 启动所有发送线程 */
     int Run();

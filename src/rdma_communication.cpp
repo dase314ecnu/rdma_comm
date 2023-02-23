@@ -1209,9 +1209,9 @@ void* SharedRdmaClient::sendThreadFunEntry(void *arg) {
 
 SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
             std::string _remote_ip, uint32_t _remote_port, 
-            uint32_t _node_num, void* _shared_memory)
+            uint32_t _node_num, void* _shared_memory, int **_listen_fd)
             : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
-                         _node_num, _shared_memory) 
+                         _node_num, _shared_memory), listen_fd(_listen_fd)
 {
   LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
 
@@ -1240,24 +1240,24 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
 
   this->use_shared_memory = true;
 
-  this->listen_fd = new int*[_node_num];
-  if (this->listen_fd == nullptr) {
-    throw std::bad_exception();
-  }
-  for (int i = 0; i < _node_num; ++i) {
-    this->listen_fd[i] = nullptr;
-  }
+  // this->listen_fd = new int*[_node_num];
+  // if (this->listen_fd == nullptr) {
+  //   throw std::bad_exception();
+  // }
+  // for (int i = 0; i < _node_num; ++i) {
+  //   this->listen_fd[i] = nullptr;
+  // }
 
-  for (i = 0; i < _node_num; ++i) {
-    this->listen_fd[i] = new int[2];
-    if (this->listen_fd[i] == nullptr) {
-      throw std::bad_exception();
-    }
-    int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, this->listen_fd[i]);
-    if (ret != 0) {
-      throw std::bad_exception();
-    }
-  }
+  // for (i = 0; i < _node_num; ++i) {
+  //   this->listen_fd[i] = new int[2];
+  //   if (this->listen_fd[i] == nullptr) {
+  //     throw std::bad_exception();
+  //   }
+  //   int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, this->listen_fd[i]);
+  //   if (ret != 0) {
+  //     throw std::bad_exception();
+  //   }
+  // }
 }
 
 SharedRdmaClient::~SharedRdmaClient() {

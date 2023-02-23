@@ -35,6 +35,26 @@ void TestSharedClientClass::runClient() {
         LOG_DEBUG("TestSharedClient failed to create shared memory");
         return;
     }
+    int **listen_fd = new int*[_node_num];
+    if (listen_fd == nullptr) {
+      LOG_DEBUG("TestSharedClient failed to new listen_fd");
+      return;
+    }
+    for (int i = 0; i < _node_num; ++i) {
+      listen_fd[i] = nullptr;
+    }
+    for (int i = 0; i < _node_num; ++i) {
+      listen_fd[i] = new int[2];
+      if (listen_fd[i] == nullptr) {
+        LOG_DEBUG("TestSharedClient failed to new listen_fd");
+        return;
+      }
+      int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, listen_fd[i]);
+      if (ret != 0) {
+        LOG_DEBUG("TestSharedClient failed to make socketpair");
+        return;
+      }
+    }
     
     // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
     auto func = [&] (uint32_t test_process_idx) {
@@ -68,7 +88,7 @@ void TestSharedClientClass::runClient() {
 
     try {
         rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
-                _node_num, _shared_memory + sizeof(SharedRdmaClient));
+                _node_num, _shared_memory + sizeof(SharedRdmaClient), listen_fd);
     } catch (...) {
         LOG_DEBUG("TestSharedClient failed to new SharedRdmaClient");
         return;
