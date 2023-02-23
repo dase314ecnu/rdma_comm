@@ -1398,7 +1398,7 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
 
   // zhouhuahui test
   // pthread_spin_lock(this->sends[0].spinlock);
-  sleep(10);
+  sleep(1);
   // pthread_spin_unlock(this->sends[0].spinlock);
 }
 
