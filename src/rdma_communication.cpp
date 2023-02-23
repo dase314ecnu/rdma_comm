@@ -1158,6 +1158,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   if (rc != 0) {
     return;
   }
+  rc = waitset->addFd(this->listen_fd[node_idx][1]);
+  if (rc != 0) {
+    return;
+  }
   while (!this->stop) {
     epoll_event event;
     rc = waitset->waitSetWait(&event);
