@@ -1186,7 +1186,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           return;
         }
         LOG_DEBUG("get response of slot: %lu", slot_idx);
-        (void) pthread_spin_lock(send->spinlock);
+        // (void) pthread_spin_lock(send->spinlock);
         send->states[slot_idx] = SlotState::SLOT_IDLE;
         if (slot_idx == send->front) {
           uint64_t p = slot_idx;
@@ -1200,7 +1200,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         LOG_DEBUG("after processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
               "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
               send->rear, send->notsent_rear);
-        (void) pthread_spin_unlock(send->spinlock);
+        // (void) pthread_spin_unlock(send->spinlock);
       } else {
         send_cnt++;
         LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
@@ -1208,7 +1208,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     }
 
     // 需要发送slot中的数据
-    (void) pthread_spin_lock(send->spinlock);
+    // (void) pthread_spin_lock(send->spinlock);
     uint64_t rear = send->rear;
     uint64_t rear2 = (send->rear + 1) % (this->slot_num + 1);
     if (rear2 != send->front && test_send_cnt < 2 * this->slot_num) {
@@ -1228,7 +1228,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
           send->rear, send->notsent_rear);
     }
-    (void) pthread_spin_unlock(send->spinlock);
+    // (void) pthread_spin_unlock(send->spinlock);
   }
 }
 
@@ -1397,9 +1397,9 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
 
 
   // zhouhuahui test
-  // pthread_spin_lock(this->sends[0].spinlock);
-  // sleep(10);
-  // pthread_spin_unlock(this->sends[0].spinlock);
+  pthread_spin_lock(this->sends[0].spinlock);
+  sleep(10);
+  pthread_spin_unlock(this->sends[0].spinlock);
 }
 
 uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
