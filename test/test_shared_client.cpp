@@ -37,8 +37,11 @@ void TestSharedClientClass::runClient() {
     }
     try
     {
-        rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
-                _node_num, _shared_memory + sizeof(SharedRdmaClient));
+        // zhouhuahui test
+        // rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
+        //         _node_num, _shared_memory + sizeof(SharedRdmaClient));
+        rdma_client = new SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port,
+                _node_num, _shared_memory);
     }
     catch (...)
     {
