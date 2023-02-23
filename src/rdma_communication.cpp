@@ -1211,9 +1211,11 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
             std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void* _shared_memory, int **_listen_fd)
             : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
-                         _node_num, _shared_memory), listen_fd(_listen_fd)
+                         _node_num, _shared_memory)
 {
   LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
+
+  this->listen_fd = _listen_fd;
 
   int i = 0;
   SCOPEEXIT([&]() {
