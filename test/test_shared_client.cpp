@@ -124,7 +124,9 @@ void TestSharedClientClass::runClient() {
                 
                 for (int j = 0; j <1 ; ++j) {
                     LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-                    sleep(10);
+                    sleep(3);
+                    rdma_client = (SharedRdmaClient *)_shared_memory;
+                    rdma_client->PostRequest(send_buf, 0);
                     LOG_DEBUG("test_process of %u has sent %dth(from 0) msg", test_process_idx, j);
                 }
             }
