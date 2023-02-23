@@ -1207,7 +1207,7 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
             std::string _remote_ip, uint32_t _remote_port, 
             uint32_t _node_num, void* _shared_memory)
             : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
-                         _node_num, nullptr)  // zhouhuahui test
+                         _node_num)  // zhouhuahui test，应该调用shared memory的版本
 {
   LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
 
