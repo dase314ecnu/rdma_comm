@@ -1068,6 +1068,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
                     "after receiving a recv wc", node_idx);
             return;
           }
+          if (qp->PostReceive() != 0) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
+                    "after receiving a recv wc", node_idx);
+            return;
+          }
           
           // zhouhuahui test
           LOG_DEBUG("get response of slot: %lu", slot_idx);
