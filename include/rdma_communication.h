@@ -374,12 +374,12 @@ private:
      */
     volatile bool stop = false;
 
-public: // zhouhuahui test
+protected:
     /** 
      * 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，
      * 说明某个slot中含有要发送的数据。
      * */
-    int       **listen_fd = nullptr;     /* node_num长度 */
+    int       *listen_fd = nullptr;     /* node_num * 2长度 */
     pthread_t  *send_threads = nullptr;  /* node_num长度 */
 
 protected:
@@ -396,7 +396,7 @@ public:
      * */
     SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
             std::string _remote_ip, uint32_t _remote_port, 
-            uint32_t _node_num, void* _shared_memory, int **_listend_fd);
+            uint32_t _node_num, void* _shared_memory, int *_listend_fd);
     ~SharedRdmaClient();
     /** 启动所有发送线程 */
     int Run();

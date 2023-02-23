@@ -29,32 +29,23 @@ void TestSharedClientClass::runClient() {
     });
     
     myshm = new MySharedMemory(SharedRdmaClient::GetSharedObjSize(_slot_size, 
-            _slot_num, _node_num));
+            _slot_num, _node_num) + sizeof(int) * 2 * _node_num);
     _shared_memory = myshm->GetSharedMemory();
     if (_shared_memory == nullptr) {
         LOG_DEBUG("TestSharedClient failed to create shared memory");
         return;
     }
-    int **listen_fd = new int*[_node_num];
-    if (listen_fd == nullptr) {
-      LOG_DEBUG("TestSharedClient failed to new listen_fd");
-      return;
-    }
+    // 初始化socketpair
+    int *listen_fd = (int *)_shared_memory;
     for (int i = 0; i < _node_num; ++i) {
-      listen_fd[i] = nullptr;
-    }
-    for (int i = 0; i < _node_num; ++i) {
-      listen_fd[i] = new int[2];
-      if (listen_fd[i] == nullptr) {
-        LOG_DEBUG("TestSharedClient failed to new listen_fd");
-        return;
-      }
-      int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, listen_fd[i]);
+      int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, &(listen_fd[i * 2]));
       if (ret != 0) {
         LOG_DEBUG("TestSharedClient failed to make socketpair");
         return;
       }
     }
+
+    _shared_memory = _shared_memory + sizeof(int) * 2 * _node_num;
     
     // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
     auto func = [&] (uint32_t test_process_idx) {
@@ -81,8 +72,6 @@ void TestSharedClientClass::runClient() {
             is_father = false;
             sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
             rdma_client = (SharedRdmaClient *)_shared_memory;
-            LOG_DEBUG("zhouhuahui test: listenfd[0][0] = %d, listendfd[0][1] = %d", listen_fd[0][0],
-                    rdma_client->listen_fd[0][1]); // zhouhuahui test
             func(i);
             return;
         }
