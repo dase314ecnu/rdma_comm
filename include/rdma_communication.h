@@ -224,6 +224,7 @@ public:
      * @return 1: 成功取出 0：没有WC -1：出现异常
      */
     int  PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs); 
+    int  TestPollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs);  // zhouhuahui test
     int ReadyToUseQP();
     void GetLocalQPMetaData(QueuePairMetaData &local_data);
     void SetRemoteQPMetaData(QueuePairMetaData &remote_data);

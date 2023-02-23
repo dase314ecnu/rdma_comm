@@ -392,6 +392,30 @@ int RdmaQueuePair::PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs) {
   return wc_num;
 }
 
+// zhouhuahui test
+int RdmaQueuePair::TestPollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs) {
+  int ret = 0;
+  struct ibv_cq *ev_cq;
+  struct ibv_wc  wc;
+  void          *ev_ctx;
+  int            wc_num = 0;
+  
+  while (true) {
+    ret = ibv_poll_cq(ev_cq, 1, &wc);
+    if (ret < 0) {
+      return -1;
+    }
+    if (ret == 0) {
+      break;
+    }
+    if (ret > 0) {
+      wcs.push_back(wc);
+      wc_num++;
+    }
+  }
+  return wc_num;
+}
+
 int RdmaQueuePair::ReadyToUseQP() {
   if (this->modifyQPtoInit() != 0) {
     LOG_DEBUG("RdmaQueuePair failed to modify qp to init");
@@ -1134,7 +1158,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
   while (!this->stop) {
     std::vector<struct ibv_wc> wcs;
-    rc = qp->PollCompletionsFromCQ(wcs);
+    rc = qp->TestPollCompletionsFromCQ(wcs);
     for (int i = 0; i < rc; ++i) {
       struct ibv_wc &wc = wcs[i];
       if (wc.status != IBV_WC_SUCCESS) {
