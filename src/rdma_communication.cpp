@@ -1022,6 +1022,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
     epoll_event event;
     rc = waitset->waitSetWait(&event);
     if (rc < 0 && errno != EINTR) {
+      LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to waitsetwait", node_idx);
       return;
     }
     if (rc <= 0) {
@@ -1032,6 +1033,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       std::vector<struct ibv_wc> wcs;
       rc = qp->PollCompletionsFromCQ(wcs);
       if (rc < 0) {
+        LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to poll wcs", node_idx);
         return;
       }
 
@@ -1085,6 +1087,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           if (r > 0) {
             continue;
           } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to recv from listen fd", 
+                    node_idx);
             return;
           } else {
             break;
@@ -1098,6 +1102,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);
+          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
           return;
         }
         slot_idx = (slot_idx + 1) % (this->slot_num + 1);
