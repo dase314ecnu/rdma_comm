@@ -1394,10 +1394,12 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
   //   usleep(100);
   // }
 
+
+
   // zhouhuahui test
-  pthread_spin_lock(this->sends[0].spinlock);
-  sleep(10);
-  pthread_spin_unlock(this->sends[0].spinlock);
+  // pthread_spin_lock(this->sends[0].spinlock);
+  // sleep(10);
+  // pthread_spin_unlock(this->sends[0].spinlock);
 }
 
 uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
