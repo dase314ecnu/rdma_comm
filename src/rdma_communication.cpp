@@ -1397,7 +1397,7 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
 
 
   // zhouhuahui test
-  usleep(100);
+  sleep(1);
 }
 
 uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
