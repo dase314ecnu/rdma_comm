@@ -1356,42 +1356,48 @@ void SharedRdmaClient::Destroy() {
 }
 
 int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
-  if (size > this->slot_size) {
-    return -1;
-  }
-  char c;
-  int  rc = 0;
+  // zhouhuahui test
+  // if (size > this->slot_size) {
+  //   return -1;
+  // }
+  // char c;
+  // int  rc = 0;
 
-  while (true) {
-    for (int i = 0; i < this->node_num; ++i) {
-      ZSend  *zsend = &this->sends[i];
-      ZAwake *zawake = &this->awakes[i];
-      uint64_t rear = 0;
-      (void) pthread_spin_lock(zsend->spinlock);
-      uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
-      if (rear2 == zsend->front) {
-        (void) pthread_spin_unlock(zsend->spinlock);
-        continue;
-      }
-      rear                = zsend->rear;
-      zsend->states[rear] = SlotState::SLOT_INPROGRESS;
-      zsend->rear          = rear2;
-      zsend->notsent_rear  = rear2;
+  // while (true) {
+  //   for (int i = 0; i < this->node_num; ++i) {
+  //     ZSend  *zsend = &this->sends[i];
+  //     ZAwake *zawake = &this->awakes[i];
+  //     uint64_t rear = 0;
+  //     (void) pthread_spin_lock(zsend->spinlock);
+  //     uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
+  //     if (rear2 == zsend->front) {
+  //       (void) pthread_spin_unlock(zsend->spinlock);
+  //       continue;
+  //     }
+  //     rear                = zsend->rear;
+  //     zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+  //     zsend->rear          = rear2;
+  //     zsend->notsent_rear  = rear2;
 
-      char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
-              + rear * this->slot_size;
-      memcpy(buf, send_content, size);
-      (void) pthread_spin_unlock(zsend->spinlock);
+  //     char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+  //             + rear * this->slot_size;
+  //     memcpy(buf, send_content, size);
+  //     (void) pthread_spin_unlock(zsend->spinlock);
       
-      rc = send(this->listen_fd[i][0], &c, 1, 0); 
-      if (rc <= 0) {
-        return -1;
-      }
-      (void) sem_wait(&(zawake->sems[rear]));
-      return 0;
-    }
-    usleep(100);
-  }
+  //     rc = send(this->listen_fd[i][0], &c, 1, 0); 
+  //     if (rc <= 0) {
+  //       return -1;
+  //     }
+  //     (void) sem_wait(&(zawake->sems[rear]));
+  //     return 0;
+  //   }
+  //   usleep(100);
+  // }
+
+  // zhouhuahui test
+  pthread_spin_lock(this->sends[0].spinlock);
+  sleep(10);
+  pthread_spin_unlock(this->sends[0].spinlock);
 }
 
 uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
