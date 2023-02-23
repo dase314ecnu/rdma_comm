@@ -82,7 +82,7 @@ void TestSharedClientClass::runClient() {
             sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
             rdma_client = (SharedRdmaClient *)_shared_memory;
             LOG_DEBUG("zhouhuahui test: listenfd[0][0] = %d, listendfd[0][1] = %d", listen_fd[0][0],
-                    listen_fd[0][1]); // zhouhuahui test
+                    rdma_client->listen_fd[0][1]); // zhouhuahui test
             func(i);
             return;
         }

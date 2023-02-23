@@ -374,7 +374,7 @@ private:
      */
     volatile bool stop = false;
 
-protected:
+public: // zhouhuahui test
     /** 
      * 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，
      * 说明某个slot中含有要发送的数据。
