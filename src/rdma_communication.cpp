@@ -1005,6 +1005,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
   ZAwake  *awake   = &this->awakes[node_idx];
   char     tmp_buf[1024];
   uint64_t send_cnt = 0;  // 成功发送消息的个数
+  // zhouhuahui test
+  uint64_t post_recv_cnt = 0;
 
   SCOPEEXIT([&]() {
     this->stop = true;
@@ -1079,6 +1081,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
                     "after receiving a recv wc", node_idx);
             return;
           }
+          post_recv_cnt += 4;
+          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, have posted %lu recv", 
+                  node_idx, post_recv_cnt);
           
           // zhouhuahui test
           LOG_DEBUG("get response of slot: %lu", slot_idx);
