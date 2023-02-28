@@ -1053,8 +1053,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             return;
           }
           
-          // zhouhuahui test
-          LOG_DEBUG("get response of slot: %lu", slot_idx);
           (void) sem_post(&(awake->sems[slot_idx]));
           (void) pthread_spin_lock(send->spinlock);
           send->states[slot_idx] = SlotState::SLOT_IDLE;
@@ -1068,9 +1066,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->front = p;
           }
           // zhouhuahui test
-          LOG_DEBUG("after processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
-                "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-                send->rear, send->notsent_rear);
+          // LOG_DEBUG("after processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
+          //       "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
+          //       send->rear, send->notsent_rear);
           (void) pthread_spin_unlock(send->spinlock);
         } else {
           send_cnt++;
@@ -1109,9 +1107,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       }
       send->notsent_front = send->notsent_rear;
       // zhouhuahui test
-      LOG_DEBUG("after processing a sending, qp[%u]: front: %lu, notsent_front: %lu "
-            "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-            send->rear, send->notsent_rear);
+      // LOG_DEBUG("after processing a sending, qp[%u]: front: %lu, notsent_front: %lu "
+      //       "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
+      //       send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
     } else {
       /* can not reach here */
@@ -1192,7 +1190,6 @@ void SharedRdmaClient::Destroy() {
 }
 
 int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
-  // zhouhuahui test
   if (size > this->slot_size) {
     return -1;
   }
