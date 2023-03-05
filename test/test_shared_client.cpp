@@ -60,8 +60,11 @@ void TestSharedClientClass::runClient() {
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
             // zhouhuahui test
             LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-            rdma_client->PostRequest((void *)send_buf, length);
-            LOG_DEBUG("test_process of %u has sent %dth(from 0) msg", test_process_idx, j);
+            void *response = nullptr;
+            rdma_client->PostRequest((void *)send_buf, length, &response);
+            LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                    test_process_idx, j, MessageUtil::parseLength(response));
+            free(response);
         }
     };
     
@@ -92,49 +95,6 @@ void TestSharedClientClass::runClient() {
         int status;
         wait(&status);
     }
-    
-
-    // zhouhuahui test
-    // for (uint32_t i = 0; i < 1; ++i) {
-    //     int ret = fork();
-    //     assert(ret >= 0);
-    //     if (ret == 0) {
-    //         is_father = false;
-    //         {
-    //             uint32_t test_process_idx = i;
-    //             char content[20] = "zhouhuahui";
-    //             int length = sizeof(int) + strlen(content) + 1;
-    //             char send_buf[1000];
-    //             char *pointer = send_buf;
-    //             memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-    //             pointer += sizeof(int);
-    //             memcpy(pointer, content, strlen(content) + 1);
-                
-    //             for (int j = 0; j <1 ; ++j) {
-    //                 LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-    //                 sleep(3);
-    //                 rdma_client = (SharedRdmaClient *)_shared_memory;
-    //                 rdma_client->PostRequest(send_buf, 0);
-    //                 LOG_DEBUG("test_process of %u has sent %dth(from 0) msg", test_process_idx, j);
-    //             }
-    //         }
-    //         return;
-    //     }
-    // }
-    // try
-    // {
-    //     rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
-    //             _node_num, _shared_memory + sizeof(SharedRdmaClient));
-    // }
-    // catch (...)
-    // {
-    //     LOG_DEBUG("TestSharedClient failed to new SharedRdmaClient");
-    //     return;
-    // }
-    // if (rdma_client->Run() != 0) {
-    //     LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
-    // }
-    // while (true) {} 
 }
 
 #ifdef TEST_SHARED_CLIENT

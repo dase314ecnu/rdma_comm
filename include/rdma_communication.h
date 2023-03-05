@@ -224,7 +224,6 @@ public:
      * @return 1: 成功取出 0：没有WC -1：出现异常
      */
     int  PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs); 
-    int  TestPollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs);  // zhouhuahui test
     int ReadyToUseQP();
     void GetLocalQPMetaData(QueuePairMetaData &local_data);
     void SetRemoteQPMetaData(QueuePairMetaData &remote_data);
@@ -404,8 +403,11 @@ public:
     void Stop();
     /** Destroy all the resources of the SharedRdmaClient */
     void Destroy();
-    /** 调用SharedRdmaClient的发送消息的接口 */
-    int PostRequest(void *send_content, uint64_t size);
+    /** 
+     * 调用SharedRdmaClient的发送消息的接口，返回内容放在response中。
+     * PostRequest()负责申请响应的存储空间，然后将响应复制到这个空间中，然后将这个空间的地址复制给*response
+     */
+    int PostRequest(void *send_content, uint64_t size, void **response);
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
@@ -503,11 +505,23 @@ public:
     /** 
      * 向node_idx号node发送响应。
      * PostResponse()不会与receiveThreadFun()冲突，这是因为RdmaClient和RdmaServer之间的协议：
-     * 服务器发送响应之后，客户端才可以释放对应node的锁，因此PostResponse()时，必定不会在同一个node
+     * 服务器发送响应之后，客户端才可以释放对应slot的锁，因此PostResponse()时，必定不会在同一个slot
      * 中到来消息，因此不用考虑并发的问题。
      * @param node_idx: 小于compute_num * node_num
+     * @param response: reponse的长度比定小于等于slot_size
      */
-    int PostResponse(uint64_t node_idx, uint64_t slot_idx);
+    int PostResponse(uint64_t node_idx, uint64_t slot_idx, void *response);
+};
+
+// /* 从消息缓冲区中解析出前4个字节的长度字段 */
+// static int parseLength(void *buf) 
+class MessageUtil {
+public:
+  static int parseLength(void *buf) {
+    char *b = (char *)buf;
+    int *length = reinterpret_cast<int *>(b);
+    return *length;
+  }
 };
 
 /** 
@@ -942,9 +956,16 @@ void RdmaServer<T>::Stop() {
 }
 
 template<typename T>
-int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx) {
+int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx, void *response) {
+  if (response == nullptr) {
+    return -1;
+  }
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
-  qp->SetSendContent((void *)0, 0, slot_idx);
+  int length = MessageUtil::parseLength(response);
+  if (length < 4) {
+    return -1;
+  }
+  qp->SetSendContent(response, length, slot_idx);
   return qp->PostSend(slot_idx, slot_idx);
 }
 

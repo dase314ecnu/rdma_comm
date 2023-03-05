@@ -1054,22 +1054,18 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           }
           
           (void) sem_post(&(awake->sems[slot_idx]));
-          (void) pthread_spin_lock(send->spinlock);
-          send->states[slot_idx] = SlotState::SLOT_IDLE;
-          if (slot_idx == send->front) {
-            uint64_t p = slot_idx;
-            while (p != send->notsent_front
-                    && send->states[p] == SlotState::SLOT_IDLE) 
-            {
-              p = (p + 1) % (this->slot_num + 1);
-            }
-            send->front = p;
-          }
-          // zhouhuahui test
-          // LOG_DEBUG("after processing a recv wc, qp[%u]: front: %lu, notsent_front: %lu "
-          //       "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-          //       send->rear, send->notsent_rear);
-          (void) pthread_spin_unlock(send->spinlock);
+          // (void) pthread_spin_lock(send->spinlock);
+          // send->states[slot_idx] = SlotState::SLOT_IDLE;
+          // if (slot_idx == send->front) {
+          //   uint64_t p = slot_idx;
+          //   while (p != send->notsent_front
+          //           && send->states[p] == SlotState::SLOT_IDLE) 
+          //   {
+          //     p = (p + 1) % (this->slot_num + 1);
+          //   }
+          //   send->front = p;
+          // }
+          // (void) pthread_spin_unlock(send->spinlock);
         } else {
           send_cnt++;
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
@@ -1106,10 +1102,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         slot_idx = (slot_idx + 1) % (this->slot_num + 1);
       }
       send->notsent_front = send->notsent_rear;
-      // zhouhuahui test
-      // LOG_DEBUG("after processing a sending, qp[%u]: front: %lu, notsent_front: %lu "
-      //       "rear: %lu, notsent_rear: %lu", node_idx, send->front, send->notsent_front, 
-      //       send->rear, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
     } else {
       /* can not reach here */
@@ -1189,7 +1181,7 @@ void SharedRdmaClient::Destroy() {
   LOG_DEBUG("End to destroy SharedRdmaClient");
 }
 
-int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
+int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **response) {
   if (size > this->slot_size) {
     return -1;
   }
@@ -1222,6 +1214,25 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size) {
         return -1;
       }
       (void) sem_wait(&(zawake->sems[rear]));
+      // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+      // 响应中的前四个字节必定是长度字段
+      int length = MessageUtil::parseLength(buf);
+      *response = malloc(length);
+      memcpy(*response, buf, length);
+      
+      // 更新zsend中的一些元信息，也就是推进zsend->front
+      (void) pthread_spin_lock(zsend->spinlock);
+      zsend->states[rear] = SlotState::SLOT_IDLE;
+      if (rear == zsend->front) {
+        uint64_t p = rear;
+        while (p != zsend->notsent_front
+                && zsend->states[p] == SlotState::SLOT_IDLE) 
+        {
+          p = (p + 1) % (this->slot_num + 1);
+        }
+        zsend->front = p;
+      }
+      (void) pthread_spin_unlock(zsend->spinlock);
       return 0;
     }
     usleep(100);

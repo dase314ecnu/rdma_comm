@@ -131,8 +131,12 @@ void TestWorkerThreadpool::workerThreadFun() {
             LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d, content: %s",
                     length, content.c_str());
 
-            // 回复
-            if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx) != 0) {
+            // 回复，指定响应的长度是20
+            char res_buf[100];
+            length = 20;
+            char *pointer = res_buf;
+            memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
+            if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx, res_buf) != 0) {
                 break;
             }
         }
