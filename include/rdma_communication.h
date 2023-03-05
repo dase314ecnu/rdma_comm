@@ -381,6 +381,13 @@ protected:
     int       *listen_fd = nullptr;     /* node_num * 2长度 */
     pthread_t  *send_threads = nullptr;  /* node_num长度 */
 
+    /** 
+     * 用于RoundRobin算法
+     * 每次从start_idx号的node找可以用于发送的node，每次PostRequest后start_idx = (start_idx + 1) % node_num
+     */
+    uint32_t start_idx = 0;
+    pthread_spinlock_t start_idx_lock;
+
 protected:
     /** 发送线程执行的代码 */
     void sendThreadFun(uint32_t node_idx);

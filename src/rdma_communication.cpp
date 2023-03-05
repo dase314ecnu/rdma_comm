@@ -1127,6 +1127,8 @@ SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num,
   this->listen_fd = _listen_fd;
   this->use_shared_memory = true;
 
+  pthread_spin_init(&(this->start_idx_lock), 1);
+
   LOG_DEBUG("SharedRdmaClient End to construct the SharedRdmaClient\n");
 }
 
@@ -1175,6 +1177,7 @@ void SharedRdmaClient::Destroy() {
   LOG_DEBUG("Start to destroy SharedRdmaClient\n");
 
   this->Stop();
+  pthread_spin_destroy(&(this->start_idx_lock));
 
   RdmaClient::Destroy();
 
@@ -1188,8 +1191,19 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **resp
   char c;
   int  rc = 0;
 
+  int start = 0;
+  /** 
+   * 采用round robin法来实现负载均衡
+   */
+  pthread_spin_lock(&(this->start_idx_lock));
+  start = this->start_idx;
+  this->start_idx = (this->start_idx + 1) % this->node_num;
+  pthread_spin_unlock(&(this->start_idx_lock));
+
   while (true) {
-    for (int i = 0; i < this->node_num; ++i) {
+    for (int j = 0; j < this->node_num; ++j) {
+      int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+      
       ZSend  *zsend = &this->sends[i];
       ZAwake *zawake = &this->awakes[i];
       uint64_t rear = 0;
