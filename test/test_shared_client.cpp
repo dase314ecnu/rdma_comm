@@ -3,9 +3,9 @@
 
 #include "test/test_shared_client.h"
 #include "test/test_worker_threadpool.h"
-#include "rdma_communication.h"
-#include "inner_scope.h"
-#include "configuration.h"
+#include "pgrac_rdma_communication.h"
+#include "pgrac_inner_scope.h"
+#include "pgrac_configuration.h"
 
 void TestSharedClientClass::runClient() {
     std::string remote_ip = SERVER_IP; 

@@ -3,8 +3,8 @@
 
 #include "test/test_simple_server2.h"
 #include "test/test_worker_threadpool.h"
-#include "configuration.h"
-#include "log.h"
+#include "pgrac_configuration.h"
+#include "pgrac_log.h"
 
 // 是否停止服务器
 int stop_server = 0;

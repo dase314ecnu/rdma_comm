@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 
-#include "rdma_communication.h"
+#include "pgrac_rdma_communication.h"
 
 /** 
  * 一个简单的线程池，每个线程竞争同一个消息队列来获得消息来处理。

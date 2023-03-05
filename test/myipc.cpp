@@ -2,7 +2,7 @@
 #include <errno.h>
 
 #include "test/myipc.h"
-#include "log.h"
+#include "pgrac_log.h"
 
 MySharedMemory::MySharedMemory(size_t size) {
   CreateSharedMemory(size);

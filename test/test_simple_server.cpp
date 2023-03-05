@@ -4,10 +4,10 @@
 #include <signal.h>
 
 #include "test/test_simple_server.h"
-#include "rdma_communication.h"
-#include "configuration.h"
-#include "log.h"
-#include "inner_scope.h"
+#include "pgrac_rdma_communication.h"
+#include "pgrac_configuration.h"
+#include "pgrac_log.h"
+#include "pgrac_inner_scope.h"
 
 // 是否停止服务器
 int stop_server = 0;

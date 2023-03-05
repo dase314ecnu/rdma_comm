@@ -7,7 +7,7 @@
 #include <cstring>
 #include <string>
 
-#include "rdma_communication.h"
+#include "pgrac_rdma_communication.h"
 #include "test/test_worker_threadpool.h"
 
 /**  

@@ -15,10 +15,10 @@
 #include <map>
 #include <stdint.h>
 
-#include "rdma_communication.h"
-#include "inner_scope.h"
-#include "waitset.h"
-#include "log.h"
+#include "pgrac_rdma_communication.h"
+#include "pgrac_inner_scope.h"
+#include "pgrac_waitset.h"
+#include "pgrac_log.h"
 
 int RdmaQueuePair::initializeLocalRdmaResource() {
   struct ibv_device **device_list = nullptr;

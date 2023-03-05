@@ -8,8 +8,8 @@
 #include <semaphore.h>
 
 #include "test/test_shared_memory.h"
-#include "waitset.h"
-#include "log.h"
+#include "pgrac_waitset.h"
+#include "pgrac_log.h"
 
 /** 
  * TestSharedMemoryWorker的参数
@@ -27,10 +27,18 @@ void TestSharedMemoryClass::TestSharedMemory () {
   this->node_num = 5;
   this->client = (SharedRdmaClient *)buffer;
   buffer       += sizeof(SharedRdmaClient);
-  // *(this->client) = SharedRdmaClient(this->slot_size, this->slot_num, 
-  //     "", 0, this->node_num, buffer);
+
+  // 初始化socketpair
+  int *listen_fd = (int *)buffer;
+  for (int i = 0; i < this->node_num; ++i) {
+    int ret = socketpair(PF_UNIX, SOCK_STREAM, 0, &(listen_fd[i * 2]));
+    if (ret != 0) {
+      LOG_DEBUG("TestSharedMemory failed to make socketpair");
+      return;
+    }
+  }
   new (this->client)SharedRdmaClient(this->slot_size, this->slot_num,
-          "", 0, this->node_num, buffer);
+          "", 0, this->node_num, buffer, listen_fd);
 
   // 开启node_num个线程进行监听
   pthread_t *threads = new pthread_t[node_num];
@@ -51,13 +59,13 @@ void TestSharedMemoryClass::TestSharedMemory () {
       // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
       uint32_t node_idx = i / slot_num;
       uint64_t slot_idx = i % slot_num;
-      close(this->client->listen_fd[node_idx][1]);
+      close(this->client->listen_fd[node_idx * 2 + 1]);
 
       char *content = (char*)this->client->rdma_queue_pairs[node_idx]->GetLocalMemory();
       content += this->slot_size * slot_idx;
       *content = msg;
       char *buf = reinterpret_cast<char*>(&slot_idx);
-      send(this->client->listen_fd[node_idx][0], buf, 8, 0);
+      send(this->client->listen_fd[node_idx * 2], buf, 8, 0);
 
       sem_t *sem = &(this->client->awakes[node_idx].sems[slot_idx]);
       sem_wait(sem);
@@ -80,7 +88,7 @@ void TestSharedMemoryClass::TestSharedMemory () {
 
 void TestSharedMemoryClass::Worker(uint32_t node_idx) {
   WaitSet waitset;
-  (void) waitset.addFd(this->client->listen_fd[node_idx][1]);
+  (void) waitset.addFd(this->client->listen_fd[node_idx * 2 + 1]);
 
   int remain = this->slot_num;
   while (remain > 0) {
@@ -90,7 +98,7 @@ void TestSharedMemoryClass::Worker(uint32_t node_idx) {
       return;
     }
     int fd = event.data.fd;
-    if (fd == this->client->listen_fd[node_idx][1]) {
+    if (fd == this->client->listen_fd[node_idx * 2 + 1]) {
       char buf[8];
       while (true) {
         int number = 0;

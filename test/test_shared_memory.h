@@ -7,7 +7,7 @@
  *   2. 进程/线程间信号量同步机制
  */
 
-#include "rdma_communication.h"
+#include "pgrac_rdma_communication.h"
 #include "myipc.h"
 
 class SharedRdmaClient;

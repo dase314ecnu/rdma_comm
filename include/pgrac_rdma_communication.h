@@ -22,12 +22,12 @@
 #include <map>
 #include <fcntl.h>
 
-#include "configuration.h"
+#include "pgrac_configuration.h"
 #include "test/test_shared_memory.h"
-#include "rdma_communication.h"
-#include "inner_scope.h"
-#include "waitset.h"
-#include "log.h"
+#include "pgrac_rdma_communication.h"
+#include "pgrac_inner_scope.h"
+#include "pgrac_waitset.h"
+#include "pgrac_log.h"
 
 typedef struct QueuePairMeta
 {
