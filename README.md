@@ -63,8 +63,8 @@ ipcs -m [your shmem id]
 ```
 
 # 原理
-!image(assets/rdma1.png)
-!image(assets/rdma2.png)
+![image](assets/rdma1.png)
+![image](assets/rdma2.png)
 
 
 # 问题
