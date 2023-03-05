@@ -25,8 +25,6 @@ void TestSharedMemoryClass::TestSharedMemory () {
   this->slot_size = 64;
   this->slot_num = 5;
   this->node_num = 5;
-  this->client = (SharedRdmaClient *)buffer;
-  buffer       += sizeof(SharedRdmaClient);
 
   // 初始化socketpair
   int *listen_fd = (int *)buffer;
@@ -37,6 +35,11 @@ void TestSharedMemoryClass::TestSharedMemory () {
       return;
     }
   }
+  buffer += sizeof(int) * this->node_num * 2;
+
+  this->client = (SharedRdmaClient *)buffer;
+  buffer       += sizeof(SharedRdmaClient);
+
   new (this->client)SharedRdmaClient(this->slot_size, this->slot_num,
           "", 0, this->node_num, buffer, listen_fd);
 
