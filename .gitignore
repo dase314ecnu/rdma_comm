@@ -1,3 +1,5 @@
 build/
 logfile*
 ci.sh
+temp*
+tmp*

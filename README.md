@@ -62,6 +62,10 @@ ipcs -m [your shmem id]
 ./build/test4
 ```
 
+# 原理
+!image(assets/rdma1.png)
+!image(assets/rdma2.png)
+
 
 # 问题
 ## fork()引起的rdma资源出错
