@@ -11,6 +11,25 @@
 // rdma server, rdma client以及客户端是否使用忙等的方式来等待事件
 #define USE_BUSY_POLLING (true)
 
+/** 
+ * 是否实现rdma框架层的组发送机制，也就是将一个qp中连续的多个消息一次性发送出去。
+ * 如果使用组发送机制，则需要imm data做一些修改：imm data的前24个字节表示slot_idx，后8个字节
+ * 表示从slot_idx开始的多少个slot都是已经到来的消息。
+ */
+#define USE_GROUP_POST_SEND (true)
+#define IMM_DATA_SLOT_IDX_MASK (0xFFF0)
+#define IMM_DATA_MSG_NUM_MASK (0x000F)
+#define IMM_DATA_SHIFT (8)
+#define GET_SLOT_IDX_FROM_IMM_DATA(imm_data) \
+    ((imm_data & IMM_DATA_SLOT_IDX_MASK) >> IMM_DATA_SHIFT)
+#define SET_SLOT_IDX_TO_IMM_DATA(imm_data, slot_idx) \
+    (imm_data = ((slot_idx << IMM_DATA_SHIFT) | imm_data))
+#define GET_MSG_NUM_FROM_IMM_DATA(imm_data) \
+    (imm_data & IMM_DATA_MSG_NUM_MASK)
+#define SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num) \
+    (imm_data = (msg_num | imm_data))
+
+
 // for test
 #define IS_SERVER (1)   // 是否是RdmaServer
 #define SERVER_IP ("49.52.27.135")  //RdmaServer的地址
