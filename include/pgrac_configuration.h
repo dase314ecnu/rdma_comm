@@ -20,7 +20,7 @@
 #define IMM_DATA_SLOT_IDX_MASK (0xFFFFFF00)
 #define IMM_DATA_MSG_NUM_MASK (0x000000FF)
 #define IMM_DATA_SHIFT (8)
-#define GROUP_POST_SEND_MAX_MSG_NUM (10)
+#define GROUP_POST_SEND_MAX_MSG_NUM (200)
 #define GET_SLOT_IDX_FROM_IMM_DATA(imm_data) \
     ((imm_data & IMM_DATA_SLOT_IDX_MASK) >> IMM_DATA_SHIFT)
 #define SET_SLOT_IDX_TO_IMM_DATA(imm_data, slot_idx) \
@@ -36,8 +36,8 @@
 #define SERVER_IP ("49.52.27.135")  //RdmaServer的地址
 // #define TEST_SHARED_MEMORY
 // #define TEST_SIMPLE_SERVER
-// #define TEST_SIMPLE_SERVER2
-#define TEST_SHARED_CLIENT
+#define TEST_SIMPLE_SERVER2
+// #define TEST_SHARED_CLIENT
 
 
 /** 
