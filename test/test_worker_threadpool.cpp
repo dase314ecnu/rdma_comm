@@ -109,6 +109,8 @@ void TestWorkerThreadpool::Stop()
 
 void TestWorkerThreadpool::workerThreadFun() {
     uint64_t req_cnt = 0;   // 接收的总请求的个数。
+    int rc = 0;
+
     while (!this->stop)
     {
         pthread_spin_lock(&(this->msg_queue->lock));
@@ -136,8 +138,8 @@ void TestWorkerThreadpool::workerThreadFun() {
             length = 20;
             char *pointer = res_buf;
             memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-            if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx, res_buf) != 0) {
-                LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send, errno is %d", errno);
+            if ((rc = this->simple_server->PostResponse(msg.node_idx, msg.slot_idx, res_buf)) != 0) {
+                LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send, ret is %d, errno is %d", rc, errno);
                 break;
             }
         }

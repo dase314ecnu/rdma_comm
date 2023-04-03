@@ -331,7 +331,7 @@ int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx, int length) {
   if (rc == 0) {
     return 0;
   } else {
-    return -1;
+    return rc;
   }
 }
 
@@ -1153,7 +1153,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, errno is %d", node_idx, errno);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
             return false;
           }
           slot_idx = (slot_idx + 1) % (this->slot_num + 1);
@@ -1184,7 +1184,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, errno is %d", node_idx, errno);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
             return false;
           }
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
