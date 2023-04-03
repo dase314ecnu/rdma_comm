@@ -62,6 +62,9 @@ ipcs -m [your shmem id]
 ./build/test4
 ```
 
+## 是否启用busy polling模式
+在pgrac_configuration.h中有一个宏叫做USE_BUSY_POLLING。如果为false，则使用忙等来等待事件，如果是true，则使用IO多路复用机制来等待事件。默认为false。
+
 # 原理
 ![image](assets/rdma1.png)
 ![image](assets/rdma2.png)
