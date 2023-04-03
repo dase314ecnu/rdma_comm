@@ -227,7 +227,7 @@ public:
     /* 在slot_idx的slot处赋值长度为size的send_content */
     void SetSendContent(void *send_content, uint64_t size, uint64_t slot_idx);
     /* 将slot_idx处的slot发送给对端 */
-    int PostSend(uint32_t imm_data, uint64_t slot_idx);
+    int PostSend(uint32_t imm_data, uint64_t slot_idx, int length);
     /* 向RNIC发送一个recv wr */
     int PostReceive();
     /** 
@@ -987,7 +987,7 @@ int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx, void *resp
     return -1;
   }
   qp->SetSendContent(response, length, slot_idx);
-  return qp->PostSend(slot_idx, slot_idx);
+  return qp->PostSend(slot_idx, slot_idx, length);
 }
 
 

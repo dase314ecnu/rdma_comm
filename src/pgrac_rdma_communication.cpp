@@ -300,7 +300,7 @@ void RdmaQueuePair::SetSendContent(void *send_content, uint64_t size, uint64_t s
   memcpy(buf, send_content, size);
 }
 
-int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx) {
+int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx, int length) {
   uintptr_t send_addr = (uintptr_t)((char *)this->local_memory + slot_idx * this->local_slot_size);
   uintptr_t recv_addr = this->remote_memory + slot_idx * this->local_slot_size;
 
@@ -310,7 +310,8 @@ int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx) {
 
   memset(&sg, 0, sizeof(sg));
   sg.addr = send_addr;
-  sg.length = this->local_slot_size;
+  // sg.length = this->local_slot_size;
+  sg.length = length;
   sg.lkey = this->local_mr->lkey;
 
   memset(&wr, 0, sizeof(wr));
@@ -993,7 +994,7 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
               + rear * this->slot_size;
       memcpy(buf, send_content, size);
-      if (this->rdma_queue_pairs[i]->PostSend(rear, rear) != 0) {
+      if (this->rdma_queue_pairs[i]->PostSend(rear, rear, size) != 0) {
         return -1;
       }
 
@@ -1134,7 +1135,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       (void) pthread_spin_lock(send->spinlock);
       uint64_t slot_idx = send->notsent_front;
       while (slot_idx != send->notsent_rear) {
-        rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx);
+        char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
+              + slot_idx * this->slot_size;
+        int size = MessageUtil::parseLength(buf);
+        rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);
           LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
