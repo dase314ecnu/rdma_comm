@@ -738,11 +738,11 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           return;
         }
         for (int j = 0; j < msg_num; ++j) {
-          slot_idx += j;
           char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
                   slot_idx * this->slot_size;
           // 调用工作线程池的接口，将请求发给工作线程池进行处理
           this->worker_threadpool->Start(buf, node_idx, slot_idx);
+          slot_idx++;
         }
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         // zhouhuahui test
