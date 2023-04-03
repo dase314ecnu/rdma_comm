@@ -82,8 +82,11 @@ int RdmaQueuePair::initializeLocalRdmaResource() {
       return -1;
     }
   }
-  if (ibv_req_notify_cq(this->cq, 0) != 0) {
-    return -1;
+  // 如果不使用忙等，则需要调用ibv_req_notify_cq()
+  if (!USE_BUSY_POLLING) {
+    if (ibv_req_notify_cq(this->cq, 0) != 0) {
+      return -1;
+    }
   }
 
   /* Allocate Protection Domain */
@@ -361,24 +364,40 @@ int RdmaQueuePair::PollCompletionsFromCQ(std::vector<struct ibv_wc> &wcs) {
   void          *ev_ctx;
   int            wc_num = 0;
   
-  while (true) {
-    ret = ibv_get_cq_event(this->channel, &ev_cq, &ev_ctx);
-    if (ret != 0) {
-      return wc_num;
-    }
-    ibv_ack_cq_events(ev_cq, 1);
-    ret = ibv_req_notify_cq(ev_cq, 0);
-    if (ret != 0) {
-      return -1;
-    }
-
+  if (!USE_BUSY_POLLING) {
     while (true) {
-      ret = ibv_poll_cq(ev_cq, 1, &wc);
+      ret = ibv_get_cq_event(this->channel, &ev_cq, &ev_ctx);
+      if (ret != 0) {
+        return wc_num;
+      }
+      ibv_ack_cq_events(ev_cq, 1);
+      ret = ibv_req_notify_cq(ev_cq, 0);
+      if (ret != 0) {
+        return -1;
+      }
+
+      while (true) {
+        ret = ibv_poll_cq(ev_cq, 1, &wc);
+        if (ret < 0) {
+          return -1;
+        }
+        if (ret == 0) {
+          break;
+        }
+        if (ret > 0) {
+          wcs.push_back(wc);
+          wc_num++;
+        }
+      }
+    }
+  } else {
+    while (true) {
+      ret = ibv_poll_cq(this->cq, 1, &wc);
       if (ret < 0) {
         return -1;
       }
       if (ret == 0) {
-        break;
+        return wc_num;
       }
       if (ret > 0) {
         wcs.push_back(wc);
@@ -722,9 +741,9 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
   scratch += sizeof(ZAwake) * this->node_num;
   for (int i = 0; i < this->node_num; ++i) {
     try {
-      // this->awakes[i] = ZAwake(scratch, this->slot_num);
       new (&this->awakes[i]) ZAwake(scratch, this->slot_num);
       scratch += sizeof(sem_t) * (this->slot_num + 1);
+      scratch += sizeof(volatile bool) * (this->slot_num + 1);
     } catch (...) {
       throw std::bad_exception();
     }
@@ -823,13 +842,15 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
   }
   
   while (!this->stop) {
-    epoll_event event;
-    rc = waitset->waitSetWait(&event);
-    if (rc < 0 && errno != EINTR) {
-      return;
-    }
-    if (rc <= 0) {
-      continue;
+    if (!USE_BUSY_POLLING) {
+      epoll_event event;
+      rc = waitset->waitSetWait(&event);
+      if (rc < 0 && errno != EINTR) {
+        return;
+      }
+      if (rc <= 0) {
+        continue;
+      }
     }
 
     std::vector<struct ibv_wc> wcs;
@@ -852,18 +873,22 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           return;
         }
 
-        (void) sem_post(&(awake->sems[slot_idx]));
-        (void) pthread_spin_lock(send->spinlock);
-        // slot_idx号的slot可以被标记为空闲了
-        send->states[slot_idx] = SlotState::SLOT_IDLE;
-        if (slot_idx == send->front) {
-          uint64_t p = slot_idx;
-          while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
-            p = (p + 1) % (this->slot_num + 1);
-          }
-          send->front = p;
+        if (!USE_BUSY_POLLING) {
+          (void) sem_post(&(awake->sems[slot_idx]));
+        } else {
+          awake->done[slot_idx] = true;
         }
-        (void) pthread_spin_unlock(send->spinlock);
+        // (void) pthread_spin_lock(send->spinlock);
+        // // slot_idx号的slot可以被标记为空闲了
+        // send->states[slot_idx] = SlotState::SLOT_IDLE;
+        // if (slot_idx == send->front) {
+        //   uint64_t p = slot_idx;
+        //   while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
+        //     p = (p + 1) % (this->slot_num + 1);
+        //   }
+        //   send->front = p;
+        // }
+        // (void) pthread_spin_unlock(send->spinlock);
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         send_cnt++;
         LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
@@ -972,7 +997,24 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
         return -1;
       }
 
-      (void) sem_wait(&(awake->sems[rear]));
+      if (!USE_BUSY_POLLING) {
+        (void) sem_wait(&(awake->sems[rear]));
+      } else {
+        while (awake->done[rear] == false);
+        awake->done[rear] =false;
+      }
+
+      (void) pthread_spin_lock(send->spinlock);
+      // slot_idx号的slot可以被标记为空闲了
+      send->states[rear] = SlotState::SLOT_IDLE;
+      if (rear == send->front) {
+        uint64_t p = rear;
+        while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
+          p = (p + 1) % (this->slot_num + 1);
+        }
+        send->front = p;
+      }
+      (void) pthread_spin_unlock(send->spinlock);
       return 0;
     }
     usleep(10);
@@ -1020,21 +1062,24 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
 
   while (!this->stop) {
     epoll_event event;
-    rc = waitset->waitSetWait(&event);
-    if (rc < 0 && errno != EINTR) {
-      LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to waitsetwait", node_idx);
-      return;
-    }
-    if (rc <= 0) {
-      continue;
+    if (!USE_BUSY_POLLING) {
+      rc = waitset->waitSetWait(&event);
+      if (rc < 0 && errno != EINTR) {
+        LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to waitsetwait", node_idx);
+        return;
+      }
+      if (rc <= 0) {
+        continue;
+      }
     }
     
-    if (event.data.fd == qp->GetChannel()->fd) {
+    // 返回false表示需要退出整个循环
+    auto process_wc = [&]() -> bool {
       std::vector<struct ibv_wc> wcs;
       rc = qp->PollCompletionsFromCQ(wcs);
       if (rc < 0) {
         LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to poll wcs", node_idx);
-        return;
+        return false;
       }
 
       for (int i = 0; i < rc; ++i) {
@@ -1042,7 +1087,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.status != IBV_WC_SUCCESS) {
           LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, get a wrong wc "
                   ", wc.status is %d", node_idx, wc.status);
-          return;
+          return false;
         }
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
@@ -1050,28 +1095,24 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           if (qp->PostReceive() != 0) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
                     "after receiving a recv wc", node_idx);
-            return;
+            return false;
           }
           
-          (void) sem_post(&(awake->sems[slot_idx]));
-          // (void) pthread_spin_lock(send->spinlock);
-          // send->states[slot_idx] = SlotState::SLOT_IDLE;
-          // if (slot_idx == send->front) {
-          //   uint64_t p = slot_idx;
-          //   while (p != send->notsent_front
-          //           && send->states[p] == SlotState::SLOT_IDLE) 
-          //   {
-          //     p = (p + 1) % (this->slot_num + 1);
-          //   }
-          //   send->front = p;
-          // }
-          // (void) pthread_spin_unlock(send->spinlock);
+          if (!USE_BUSY_POLLING) {
+            (void) sem_post(&(awake->sems[slot_idx]));
+          } else {
+            awake->done[slot_idx] = true;
+          }
         } else {
           send_cnt++;
           LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
         }
       }
-    } else if (event.data.fd == this->listen_fd[node_idx * 2 + 1]) {
+
+      return true;
+    };
+
+    auto process_send_request = [&]() -> bool {
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
@@ -1083,7 +1124,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           } else if (r == 0 || (errno != EWOULDBLOCK && errno != EAGAIN)) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to recv from listen fd", 
                     node_idx);
-            return;
+            return false;
           } else {
             break;
           }
@@ -1097,15 +1138,35 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (rc != 0) {
           (void) pthread_spin_unlock(send->spinlock);
           LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
-          return;
+          return false;
         }
         slot_idx = (slot_idx + 1) % (this->slot_num + 1);
       }
       send->notsent_front = send->notsent_rear;
       (void) pthread_spin_unlock(send->spinlock);
+      return true;
+    };
+    
+    if (!USE_BUSY_POLLING) {
+      if (event.data.fd == qp->GetChannel()->fd) {
+        if (!process_wc()) {
+          return;
+        }
+      } else if (event.data.fd == this->listen_fd[node_idx * 2 + 1]) {
+        if (!process_send_request()) {
+          return;
+        }
+      } else {
+        /* can not reach here */
+        return;
+      }
     } else {
-      /* can not reach here */
-      return;
+      if (!process_wc()) {
+        return;
+      }
+      if (!process_send_request()) {
+        return;
+      }
     }
   }
 }
@@ -1227,7 +1288,13 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **resp
       if (rc <= 0) {
         return -1;
       }
-      (void) sem_wait(&(zawake->sems[rear]));
+      if (!USE_BUSY_POLLING) {
+        (void) sem_wait(&(zawake->sems[rear]));
+      } else {
+        while (zawake->done[rear] == false);
+        zawake->done[rear] =false;
+      }
+
       // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
       // 响应中的前四个字节必定是长度字段
       int length = MessageUtil::parseLength(buf);
@@ -1262,6 +1329,7 @@ uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_
   size += (sizeof(SlotState) * (_slot_num + 1) + sizeof(pthread_spinlock_t)) * _node_num;
   size += sizeof(ZAwake) * _node_num;
   size += (sizeof(sem_t) * (_slot_num + 1)) * _node_num;
+  size += (sizeof(volatile bool) * (_slot_num + 1)) * _node_num;
   size += sizeof(RdmaQueuePair *) * _node_num;
   // _slot_size * (_slot_num + 1)是注册内存的大小
   size += (sizeof(RdmaQueuePair) + _slot_size * (_slot_num + 1)) * _node_num;

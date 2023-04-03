@@ -110,6 +110,8 @@ typedef struct ZSend {
 typedef struct ZAwake {
     /** 每个slot都对应一个sem_t，每当进程/线程要等待响应时，就使用这里的sems */
     sem_t          *sems = nullptr;  
+    // 如果是忙等，也就是定义了USE_BUSY_POLLING，则需要原子变量来标识消息是否执行完成。
+    volatile bool  *done = nullptr;
     ZAwake() {}
     ZAwake(void *_shared_memory, uint64_t _slot_num) {
         int shared = (_shared_memory == nullptr ? 0 : 1);
@@ -132,16 +134,25 @@ typedef struct ZAwake {
         if (shared != 0) {
             char *scratch = (char *)_shared_memory;
             this->sems = (sem_t *)scratch;
+            scratch += sizeof(sem_t) * (_slot_num + 1);
+            this->done = (volatile bool *)scratch;
         } else {
             this->sems = new sem_t[_slot_num + 1];
             if (this->sems == nullptr) {
                 throw std::bad_exception();
+            }
+            this->done = new volatile bool[_slot_num + 1];
+            if (this->done == nullptr) {
+              throw std::bad_exception();
             }
         }
         for (i = 0; i < _slot_num + 1; ++i) {
             if (sem_init(&(this->sems[i]), shared, 0) != 0) {
                 throw std::bad_exception();
             }
+        }
+        for (int i = 0; i < _slot_num + 1; ++i) {
+          this->done[i] = false;
         }
     }
 } ZAwake;
@@ -685,12 +696,15 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   while (!this->stop) {
     int rc;
     epoll_event event;
-    rc = waitset->waitSetWait(&event);
-    if (rc < 0 && errno != EINTR) {
-      return;
-    }
-    if (rc <= 0) {
-      continue;
+    // 如果不使用忙等，则需要注册wait set来使用epoll等待
+    if (!USE_BUSY_POLLING) {
+      rc = waitset->waitSetWait(&event);
+      if (rc < 0 && errno != EINTR) {
+        return;
+      }
+      if (rc <= 0) {
+        continue;
+      }
     }
 
     std::vector<struct ibv_wc> wcs;
