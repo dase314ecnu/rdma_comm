@@ -14,6 +14,7 @@
 #include <vector>
 #include <map>
 #include <stdint.h>
+#include <algorithm>
 
 #include "pgrac_rdma_communication.h"
 #include "pgrac_inner_scope.h"
@@ -994,7 +995,15 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
       char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
               + rear * this->slot_size;
       memcpy(buf, send_content, size);
-      if (this->rdma_queue_pairs[i]->PostSend(rear, rear, size) != 0) {
+
+      uint32_t imm_data = 0;
+      if (!USE_GROUP_POST_SEND) {
+        imm_data = rear;
+      } else {
+        SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)rear);
+        SET_MSG_NUM_TO_IMM_DATA(imm_data, 1);
+      }
+      if (this->rdma_queue_pairs[i]->PostSend(imm_data, rear, size) != 0) {
         return -1;
       }
 
@@ -1131,23 +1140,56 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           }
         }
       }
-
+      
       (void) pthread_spin_lock(send->spinlock);
-      uint64_t slot_idx = send->notsent_front;
-      while (slot_idx != send->notsent_rear) {
-        char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
-              + slot_idx * this->slot_size;
-        int size = MessageUtil::parseLength(buf);
-        rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
-        if (rc != 0) {
-          (void) pthread_spin_unlock(send->spinlock);
-          LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
-          return false;
+      if (!USE_GROUP_POST_SEND) {
+        uint64_t slot_idx = send->notsent_front;
+        while (slot_idx != send->notsent_rear) {
+          char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
+                + slot_idx * this->slot_size;
+          int size = MessageUtil::parseLength(buf);
+          rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
+          if (rc != 0) {
+            (void) pthread_spin_unlock(send->spinlock);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
+            return false;
+          }
+          slot_idx = (slot_idx + 1) % (this->slot_num + 1);
         }
-        slot_idx = (slot_idx + 1) % (this->slot_num + 1);
+        send->notsent_front = send->notsent_rear;
+      } else {
+        /* 实现组发送机制 */
+        uint64_t slot_idx = send->notsent_front;
+        while (slot_idx != send->notsent_rear) {
+          uint32_t msg_num = 1;
+          // 组合发送的消息不能超过GROUP_POST_SEND_MAX_MSG_NUM
+          if (send->notsent_rear > slot_idx) {
+            msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(send->notsent_rear - slot_idx));
+          } else {
+            msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(this->slot_num + 1 - slot_idx));
+          }
+
+          char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
+                  + slot_idx * this->slot_size;
+          // size是所有消息个数乘以slot_size的结果。
+          int size = this->slot_size * msg_num;
+          if (msg_num == 1) {
+            size = MessageUtil::parseLength(buf);
+          }
+          uint32_t imm_data = 0;
+          SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)slot_idx);
+          SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num);
+          rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
+          if (rc != 0) {
+            (void) pthread_spin_unlock(send->spinlock);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
+            return false;
+          }
+          slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
+        }
       }
-      send->notsent_front = send->notsent_rear;
       (void) pthread_spin_unlock(send->spinlock);
+
       return true;
     };
     

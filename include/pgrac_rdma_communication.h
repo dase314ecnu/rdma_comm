@@ -724,17 +724,27 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
 
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
         receive_cnt++;
-
-        uint32_t  slot_idx = wc.imm_data;
-        char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
-                slot_idx * this->slot_size;
-
-        if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
-          LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
-          return;
+        
+        uint32_t slot_idx, msg_num = 1;
+        if (!USE_GROUP_POST_SEND) {
+          slot_idx = wc.imm_data;
+        } else {
+          // 使用了组发送机制，则imm_data中包含了起始的slot_idx，以及消息个数msg_num
+          slot_idx = GET_SLOT_IDX_FROM_IMM_DATA(wc.imm_data);
+          msg_num = GET_MSG_NUM_FROM_IMM_DATA(wc.imm_data);
         }
-        // 调用工作线程池的接口，将请求发给工作线程池进行处理
-        this->worker_threadpool->Start(buf, node_idx, slot_idx);
+        for (int j = 0; j < msg_num; ++j) {
+          slot_idx += j;
+          char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
+                  slot_idx * this->slot_size;
+
+          if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
+            LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
+            return;
+          }
+          // 调用工作线程池的接口，将请求发给工作线程池进行处理
+          this->worker_threadpool->Start(buf, node_idx, slot_idx);
+        }
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         // zhouhuahui test
         send_cnt++;
