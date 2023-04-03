@@ -63,7 +63,7 @@ void TestSharedClientClass::runClient() {
             void *response = nullptr;
             // rdma_client->PostRequest((void *)send_buf, length, &response);
             int rc = 0;
-            auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc);
+            auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc); 
             wait(&response);
             LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
                     test_process_idx, j, MessageUtil::parseLength(response));
