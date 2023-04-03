@@ -121,8 +121,8 @@ int RdmaQueuePair::createQueuePair() {
   attr.sq_sig_all = 0;
   attr.send_cq = this->cq;
   attr.recv_cq = this->cq;
-  attr.cap.max_send_wr = this->local_slot_num * GROUP_POST_SEND_MAX_MSG_NUM;
-  attr.cap.max_recv_wr = this->local_slot_num * GROUP_POST_SEND_MAX_MSG_NUM;
+  attr.cap.max_send_wr = this->local_slot_num;
+  attr.cap.max_recv_wr = this->local_slot_num * 2;
   attr.cap.max_send_sge = 2;
   attr.cap.max_recv_sge = 1;
   attr.cap.max_inline_data = 0;
@@ -1189,6 +1189,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           }
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
         }
+        send->notsent_front = send->notsent_rear;
       }
       (void) pthread_spin_unlock(send->spinlock);
 
