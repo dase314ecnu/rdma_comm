@@ -733,15 +733,14 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           slot_idx = GET_SLOT_IDX_FROM_IMM_DATA(wc.imm_data);
           msg_num = GET_MSG_NUM_FROM_IMM_DATA(wc.imm_data);
         }
+        if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
+          LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
+          return;
+        }
         for (int j = 0; j < msg_num; ++j) {
           slot_idx += j;
           char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
                   slot_idx * this->slot_size;
-
-          if (this->rdma_queue_pairs[node_idx]->PostReceive() != 0) {
-            LOG_DEBUG("RdmaServer receive thread of %u, failed to post receive");
-            return;
-          }
           // 调用工作线程池的接口，将请求发给工作线程池进行处理
           this->worker_threadpool->Start(buf, node_idx, slot_idx);
         }
