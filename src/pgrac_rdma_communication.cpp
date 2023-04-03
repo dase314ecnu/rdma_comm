@@ -304,6 +304,7 @@ void RdmaQueuePair::SetSendContent(void *send_content, uint64_t size, uint64_t s
 int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx, int length) {
   uintptr_t send_addr = (uintptr_t)((char *)this->local_memory + slot_idx * this->local_slot_size);
   uintptr_t recv_addr = this->remote_memory + slot_idx * this->local_slot_size;
+  int rc = 0;
 
   struct ibv_sge sg;
   struct ibv_send_wr wr;
@@ -325,11 +326,12 @@ int RdmaQueuePair::PostSend(uint32_t imm_data, uint64_t slot_idx, int length) {
 
   wr.send_flags = IBV_SEND_SIGNALED;
   wr.imm_data = imm_data;
-
-  if (ibv_post_send(this->qp, &wr, &bad_wr) != 0) {
-    return -1;
-  } else {
+  
+  while ((rc = ibv_post_send(this->qp, &wr, &bad_wr)) != 0 && errno == EAGAIN);
+  if (rc == 0) {
     return 0;
+  } else {
+    return -1;
   }
 }
 
@@ -1151,7 +1153,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, errno is %d", node_idx, errno);
             return false;
           }
           slot_idx = (slot_idx + 1) % (this->slot_num + 1);
@@ -1182,7 +1184,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, errno is %d", node_idx, errno);
             return false;
           }
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);

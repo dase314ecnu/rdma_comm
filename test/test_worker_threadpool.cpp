@@ -137,6 +137,7 @@ void TestWorkerThreadpool::workerThreadFun() {
             char *pointer = res_buf;
             memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
             if (this->simple_server->PostResponse(msg.node_idx, msg.slot_idx, res_buf) != 0) {
+                LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send, errno is %d", errno);
                 break;
             }
         }
