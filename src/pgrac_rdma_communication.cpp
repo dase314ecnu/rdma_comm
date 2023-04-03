@@ -1182,7 +1182,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
-            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send", node_idx);
+            LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, errno is %d", node_idx, errno);
             return false;
           }
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
