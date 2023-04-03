@@ -1337,35 +1337,37 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **resp
       if (rc <= 0) {
         return -1;
       }
-      if (!USE_BUSY_POLLING) {
-        (void) sem_wait(&(zawake->sems[rear]));
-      } else {
-        while (zawake->done[rear] == false);
-        zawake->done[rear] =false;
-      }
+      // if (!USE_BUSY_POLLING) {
+      //   (void) sem_wait(&(zawake->sems[rear]));
+      // } else {
+      //   while (zawake->done[rear] == false);
+      //   zawake->done[rear] =false;
+      // }
 
-      // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
-      // 响应中的前四个字节必定是长度字段
-      int length = MessageUtil::parseLength(buf);
-      *response = malloc(length);
-      memcpy(*response, buf, length);
+      // // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+      // // 响应中的前四个字节必定是长度字段
+      // int length = MessageUtil::parseLength(buf);
+      // *response = malloc(length);
+      // memcpy(*response, buf, length);
       
-      // 更新zsend中的一些元信息，也就是推进zsend->front
-      (void) pthread_spin_lock(zsend->spinlock);
-      zsend->states[rear] = SlotState::SLOT_IDLE;
-      if (rear == zsend->front) {
-        uint64_t p = rear;
-        while (p != zsend->notsent_front
-                && zsend->states[p] == SlotState::SLOT_IDLE) 
-        {
-          p = (p + 1) % (this->slot_num + 1);
-        }
-        zsend->front = p;
-      }
-      (void) pthread_spin_unlock(zsend->spinlock);
+      // // 更新zsend中的一些元信息，也就是推进zsend->front
+      // (void) pthread_spin_lock(zsend->spinlock);
+      // zsend->states[rear] = SlotState::SLOT_IDLE;
+      // if (rear == zsend->front) {
+      //   uint64_t p = rear;
+      //   while (p != zsend->notsent_front
+      //           && zsend->states[p] == SlotState::SLOT_IDLE) 
+      //   {
+      //     p = (p + 1) % (this->slot_num + 1);
+      //   }
+      //   zsend->front = p;
+      // }
+      // (void) pthread_spin_unlock(zsend->spinlock);
+
+      this->WaitForResponse(zsend, zawake, buf, rear, response);
       return 0;
     }
-    usleep(100);
+    // usleep(100);
   }
 }
 

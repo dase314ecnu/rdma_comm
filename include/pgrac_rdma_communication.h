@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <map>
 #include <fcntl.h>
+#include <functional>
 
 #include "pgrac_configuration.h"
 #include "test/test_shared_memory.h"
@@ -354,6 +355,17 @@ public:
     int PostRequest(void *send_content, uint64_t size);
 };
 
+// /* 从消息缓冲区中解析出前4个字节的长度字段 */
+// static int parseLength(void *buf) 
+class MessageUtil {
+public:
+  static int parseLength(void *buf) {
+    char *b = (char *)buf;
+    int *length = reinterpret_cast<int *>(b);
+    return *length;
+  }
+};
+
 
 /** 
  * 在计算节点中，每个backend进程和SharedRdmaClient交互。
@@ -426,6 +438,98 @@ public:
      * PostRequest()负责申请响应的存储空间，然后将响应复制到这个空间中，然后将这个空间的地址复制给*response
      */
     int PostRequest(void *send_content, uint64_t size, void **response);
+
+    void WaitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response) {
+      if (!USE_BUSY_POLLING) {
+        (void) sem_wait(&(zawake->sems[rear]));
+      } else {
+        while (zawake->done[rear] == false);
+        zawake->done[rear] =false;
+      }
+
+      // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+      // 响应中的前四个字节必定是长度字段
+      int length = MessageUtil::parseLength(buf);
+      *response = malloc(length);
+      memcpy(*response, buf, length);
+      
+      // 更新zsend中的一些元信息，也就是推进zsend->front
+      (void) pthread_spin_lock(zsend->spinlock);
+      zsend->states[rear] = SlotState::SLOT_IDLE;
+      if (rear == zsend->front) {
+        uint64_t p = rear;
+        while (p != zsend->notsent_front
+                && zsend->states[p] == SlotState::SLOT_IDLE) 
+        {
+          p = (p + 1) % (this->slot_num + 1);
+        }
+        zsend->front = p;
+      }
+      (void) pthread_spin_unlock(zsend->spinlock);
+    }
+    
+    /** 
+     * 这个是PostRequest()的异步版本。它在调用ibv_post_send()之后不会等待响应到来，而是直接返回。
+     */
+    auto AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
+        -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
+        (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1))
+    {
+#define ZeroRetValue \
+        std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), \
+            (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1)
+      
+      if (size > this->slot_size) {
+        *ret = -1;
+        return ZeroRetValue;
+      }
+      char c;
+      int  rc = 0;
+
+      int start = 0;
+      /** 
+       * 采用round robin法来实现负载均衡
+       */
+      pthread_spin_lock(&(this->start_idx_lock));
+      start = this->start_idx;
+      this->start_idx = (this->start_idx + 1) % this->node_num;
+      pthread_spin_unlock(&(this->start_idx_lock));
+
+      while (true) {
+        for (int j = 0; j < this->node_num; ++j) {
+          int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+          
+          ZSend  *zsend = &this->sends[i];
+          ZAwake *zawake = &this->awakes[i];
+          uint64_t rear = 0;
+          (void) pthread_spin_lock(zsend->spinlock);
+          uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
+          if (rear2 == zsend->front) {
+            (void) pthread_spin_unlock(zsend->spinlock);
+            continue;
+          }
+          rear                = zsend->rear;
+          zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+          zsend->rear          = rear2;
+          zsend->notsent_rear  = rear2;
+
+          char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+                  + rear * this->slot_size;
+          memcpy(buf, send_content, size);
+          (void) pthread_spin_unlock(zsend->spinlock);
+          
+          rc = send(this->listen_fd[i * 2], &c, 1, 0); 
+          if (rc <= 0) {
+            *ret = -1;
+            return ZeroRetValue;
+          }
+
+          *ret = 0;
+          return std::bind(&SharedRdmaClient::WaitForResponse, this, zsend, zawake, buf, rear,
+              std::placeholders::_1);
+        }
+      }
+    }
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
@@ -529,17 +633,6 @@ public:
      * @param response: reponse的长度比定小于等于slot_size
      */
     int PostResponse(uint64_t node_idx, uint64_t slot_idx, void *response);
-};
-
-// /* 从消息缓冲区中解析出前4个字节的长度字段 */
-// static int parseLength(void *buf) 
-class MessageUtil {
-public:
-  static int parseLength(void *buf) {
-    char *b = (char *)buf;
-    int *length = reinterpret_cast<int *>(b);
-    return *length;
-  }
 };
 
 /** 
