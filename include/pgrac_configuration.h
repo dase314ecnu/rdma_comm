@@ -8,6 +8,9 @@
 // 总的计算节点个数，每个计算节点的编号是0, 1 ... TOTAL_COMPUTE_NUM-1
 #define TOTAL_COMPUTE_NUM (2)
 
+// rdma server, rdma client以及客户端是否使用忙等的方式来等待事件
+#define USE_BUSY_POLLING (true)
+
 // for test
 #define IS_SERVER (1)   // 是否是RdmaServer
 #define SERVER_IP ("49.52.27.135")  //RdmaServer的地址
