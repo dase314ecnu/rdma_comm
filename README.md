@@ -111,6 +111,18 @@ auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc);
 wait(&response); // 等待响应到来，response用于存储响应数据
 ```
 
+## 向RDMA框架注册回调函数
+由于RDMA框架默认是将注册内存中的消息拷贝到上层，让上层去处理。但是当某些消息非常频繁，且字节数很大的时候，这种拷贝会对性能产生影响，因此可以选择将对消息的处理逻辑传递到RDMA框架，让底层自动对响应执行处理逻辑，而不是把响应拷贝到上层。
+可以这样使用回调函数：
+```cpp
+auto callback = [&](void *response) = {
+    // your code
+};
+// 或者
+auto callback = std::bind(yourfunc, your args);
+rdma_client->PostRequest((void *)send_buf, length, callback); 
+``` 
+
 
 # 问题
 ## fork()引起的rdma资源出错
