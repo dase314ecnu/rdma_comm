@@ -1,9 +1,10 @@
 project(SharedCacheService)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 include_directories(.)
 include_directories(include)
 
-set(CMAKE_CXX_FLAGS "-pthread -libverbs -g -O0")
+set(CMAKE_CXX_COMPILER "/bin/g++")
+set(CMAKE_CXX_FLAGS "-std=c++17 -pthread -libverbs -g -O0")
 set(DEBUG false CACHE BOOL "debug")
 
 if (DEBUG) 

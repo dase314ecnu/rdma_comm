@@ -1294,9 +1294,101 @@ void SharedRdmaClient::Destroy() {
   LOG_DEBUG("End to destroy SharedRdmaClient");
 }
 
+void SharedRdmaClient::WaitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response) {
+  // if (!USE_BUSY_POLLING) {
+  //   (void) sem_wait(&(zawake->sems[rear]));
+  // } else {
+  //   while (zawake->done[rear] == false);
+  //   zawake->done[rear] =false;
+  // }
+
+  // // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+  // // 响应中的前四个字节必定是长度字段
+  // int length = MessageUtil::parseLength(buf);
+  // *response = malloc(length);
+  // memcpy(*response, buf, length);
+  
+  // // 更新zsend中的一些元信息，也就是推进zsend->front
+  // (void) pthread_spin_lock(zsend->spinlock);
+  // zsend->states[rear] = SlotState::SLOT_IDLE;
+  // if (rear == zsend->front) {
+  //   uint64_t p = rear;
+  //   while (p != zsend->notsent_front
+  //           && zsend->states[p] == SlotState::SLOT_IDLE) 
+  //   {
+  //     p = (p + 1) % (this->slot_num + 1);
+  //   }
+  //   zsend->front = p;
+  // }
+  // (void) pthread_spin_unlock(zsend->spinlock);
+
+  this->waitForResponse(zsend, zawake, buf, rear, response, nullptr);
+}
+
 int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **response) {
+  // if (size > this->slot_size) {
+  //   return -1;
+  // }
+  // char c;
+  // int  rc = 0;
+
+  // int start = 0;
+  // /** 
+  //  * 采用round robin法来实现负载均衡
+  //  */
+  // pthread_spin_lock(&(this->start_idx_lock));
+  // start = this->start_idx;
+  // this->start_idx = (this->start_idx + 1) % this->node_num;
+  // pthread_spin_unlock(&(this->start_idx_lock));
+
+  // while (true) {
+  //   for (int j = 0; j < this->node_num; ++j) {
+  //     int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+      
+  //     ZSend  *zsend = &this->sends[i];
+  //     ZAwake *zawake = &this->awakes[i];
+  //     uint64_t rear = 0;
+  //     (void) pthread_spin_lock(zsend->spinlock);
+  //     uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
+  //     if (rear2 == zsend->front) {
+  //       (void) pthread_spin_unlock(zsend->spinlock);
+  //       continue;
+  //     }
+  //     rear                = zsend->rear;
+  //     zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+  //     zsend->rear          = rear2;
+  //     zsend->notsent_rear  = rear2;
+
+  //     char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+  //             + rear * this->slot_size;
+  //     memcpy(buf, send_content, size);
+  //     (void) pthread_spin_unlock(zsend->spinlock);
+      
+  //     rc = send(this->listen_fd[i * 2], &c, 1, 0); 
+  //     if (rc <= 0) {
+  //       return -1;
+  //     }
+
+  //     this->WaitForResponse(zsend, zawake, buf, rear, response);
+  //     return 0;
+  //   }
+  //   // usleep(100);
+  // }
+
+  return this->postRequest(send_content, size, response, nullptr);
+}
+
+auto SharedRdmaClient::AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
+    -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
+    (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1))
+{
+#define ZeroRetValue \
+    std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), \
+        (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1)
+  
   if (size > this->slot_size) {
-    return -1;
+    *ret = -1;
+    return ZeroRetValue;
   }
   char c;
   int  rc = 0;
@@ -1335,13 +1427,14 @@ int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **resp
       
       rc = send(this->listen_fd[i * 2], &c, 1, 0); 
       if (rc <= 0) {
-        return -1;
+        *ret = -1;
+        return ZeroRetValue;
       }
 
-      this->WaitForResponse(zsend, zawake, buf, rear, response);
-      return 0;
+      *ret = 0;
+      return std::bind(&SharedRdmaClient::WaitForResponse, this, zsend, zawake, buf, rear,
+          std::placeholders::_1);
     }
-    // usleep(100);
   }
 }
 

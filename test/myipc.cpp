@@ -27,7 +27,7 @@ char* MySharedMemory::CreateSharedMemory(size_t size) {
     return nullptr;
   }
   // 映射
-  if ((this->shmadd = (char *)shmat(shmid, nullptr, 0)) < 0) {
+  if ((this->shmadd = (char *)shmat(shmid, nullptr, 0)) == nullptr) {
     LOG_DEBUG("MySharedMemory failed to shmat, errno is %d", errno);
     return nullptr;
   }

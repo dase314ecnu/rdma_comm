@@ -415,44 +415,32 @@ protected:
     /** 发送线程执行的代码 */
     void sendThreadFun(uint32_t node_idx);
     static void *sendThreadFunEntry(void *arg);
-
-public:
+    
     /** 
-     * 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
-     * 等拷贝到shared_memory共享内存中 
-     * 
-     * _listen_fd: _node_num个socket pair
-     * */
-    SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
-            std::string _remote_ip, uint32_t _remote_port, 
-            uint32_t _node_num, void* _shared_memory, int *_listend_fd);
-    ~SharedRdmaClient();
-    /** 启动所有发送线程 */
-    int Run();
-    /** 终止所有发送线程 */
-    void Stop();
-    /** Destroy all the resources of the SharedRdmaClient */
-    void Destroy();
-    /** 
-     * 调用SharedRdmaClient的发送消息的接口，返回内容放在response中。
-     * PostRequest()负责申请响应的存储空间，然后将响应复制到这个空间中，然后将这个空间的地址复制给*response
+     * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)
+     * 如果callback为空，则需要将buf复制到上层，让上层去处理。
+     * 建议传递binder对象到callback中
      */
-    int PostRequest(void *send_content, uint64_t size, void **response);
-
-    void WaitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response) {
+    template<class T>
+    void waitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response, T callback) {
       if (!USE_BUSY_POLLING) {
         (void) sem_wait(&(zawake->sems[rear]));
       } else {
         while (zawake->done[rear] == false);
         zawake->done[rear] =false;
       }
-
-      // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
-      // 响应中的前四个字节必定是长度字段
-      int length = MessageUtil::parseLength(buf);
-      *response = malloc(length);
-      memcpy(*response, buf, length);
       
+      if constexpr (std::is_same<T, decltype(nullptr)>::value) {
+        // 此时response必不能为空
+        // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+        // 响应中的前四个字节必定是长度字段
+        int length = MessageUtil::parseLength(buf);
+        *response = malloc(length);
+        memcpy(*response, buf, length);
+      } else {
+        callback(buf);
+      }
+
       // 更新zsend中的一些元信息，也就是推进zsend->front
       (void) pthread_spin_lock(zsend->spinlock);
       zsend->states[rear] = SlotState::SLOT_IDLE;
@@ -467,21 +455,11 @@ public:
       }
       (void) pthread_spin_unlock(zsend->spinlock);
     }
-    
-    /** 
-     * 这个是PostRequest()的异步版本。它在调用ibv_post_send()之后不会等待响应到来，而是直接返回。
-     */
-    auto AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
-        -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
-        (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1))
-    {
-#define ZeroRetValue \
-        std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), \
-            (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1)
-      
+
+    template<class T>
+    int postRequest(void *send_content, uint64_t size, void **response, T callback) {
       if (size > this->slot_size) {
-        *ret = -1;
-        return ZeroRetValue;
+        return -1;
       }
       char c;
       int  rc = 0;
@@ -520,16 +498,52 @@ public:
           
           rc = send(this->listen_fd[i * 2], &c, 1, 0); 
           if (rc <= 0) {
-            *ret = -1;
-            return ZeroRetValue;
+            return -1;
           }
 
-          *ret = 0;
-          return std::bind(&SharedRdmaClient::WaitForResponse, this, zsend, zawake, buf, rear,
-              std::placeholders::_1);
+          this->waitForResponse(zsend, zawake, buf, rear, response, callback);
+          return 0;
         }
       }
     }
+
+public:
+    /** 
+     * 将RdmaQueuePair.local_memory、RdmaClient.sends、RdmaClient.awakes,  
+     * 等拷贝到shared_memory共享内存中 
+     * 
+     * _listen_fd: _node_num个socket pair
+     * */
+    SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
+            std::string _remote_ip, uint32_t _remote_port, 
+            uint32_t _node_num, void* _shared_memory, int *_listend_fd);
+    ~SharedRdmaClient();
+    /** 启动所有发送线程 */
+    int Run();
+    /** 终止所有发送线程 */
+    void Stop();
+    /** Destroy all the resources of the SharedRdmaClient */
+    void Destroy();
+
+    void WaitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response);
+
+    /** 
+     * 调用SharedRdmaClient的发送消息的接口，返回内容放在response中。
+     * PostRequest()负责申请响应的存储空间，然后将响应复制到这个空间中，然后将这个空间的地址复制给*response
+     */
+    int PostRequest(void *send_content, uint64_t size, void **response);
+
+    template<class T>
+    int PostRequest(void *send_content, uint64_t size, T callback) {
+      postRequest(send_content, size, nullptr, callback);
+    }
+    
+    /** 
+     * 这个是PostRequest()的异步版本。它在调用ibv_post_send()之后不会等待响应到来，而是直接返回。
+     */
+    auto AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
+        -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
+        (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1));
 
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
