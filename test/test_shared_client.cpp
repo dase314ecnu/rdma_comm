@@ -73,7 +73,7 @@ void TestSharedClientClass::runClient() {
                 LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
                     test_process_idx, j, MessageUtil::parseLength(response));
             };
-            rdma_client->PostRequest((void *)send_buf, length, callback);
+            rdma_client->PostRequest((void *)send_buf, length, callback); 
         }
     };
     
