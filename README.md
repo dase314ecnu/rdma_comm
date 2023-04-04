@@ -65,6 +65,9 @@ ipcs -m [your shmem id]
 ## 是否启用busy polling模式
 在pgrac_configuration.h中有一个宏叫做USE_BUSY_POLLING。如果为false，则使用忙等来等待事件，如果是true，则使用IO多路复用机制来等待事件。默认为false。
 
+## 是否启用组发送（batch）机制
+在pgrac_configuration.h中有一个宏叫做USE_GROUP_POST_SEND，以及对应的参数GROUP_POST_SEND_MAX_MSG_NUM。组发送机制可以让多个连续的消息通过一个post send发送出去，而不是一个一个发送出去，这样有助于提高吞吐率。GROUP_POST_SEND_MAX_MSG_NUM表示最大允许同时发送的消息个数，这个参数可以设置在1 -- 255之间。
+
 # 原理
 ![image](assets/rdma1.png)
 ![image](assets/rdma2.png)
@@ -72,6 +75,41 @@ ipcs -m [your shmem id]
 请求响应模式指的是请求者如何获得响应。主要有两种方式，第一种是请求者向服务端发送请求，服务端通过另一条链路（QP）向请求者发送响应数据，然后再通过原链路向请求者响应空数据或简单的控制数据，表明任务完成；第二种是请求者向服务端发送请求，服务端直接通过原链路向请求者响应响应数据。当不确定响应数据的长度是多少时，建议使用第一种请求响应模式，比如csnlog长度可能是几个页的长度，也可能只有几个事务的长度；当确定响应数据的长度是多少时，建议使用第二种请求响应模式，比如snapshot长度是固定的，页转移的大小也是固定的。很显然，第二种方式的延迟会更低，大部分情况下，使用第二种方式。
 
 目前CommonRdmaClient，也就是用于多线程环境下的rdma客户端接口，未完全开发完请求响应模式；SharedRdmaClient支持第一种和第二种请求响应模式，但是需要在响应的相关状态位中指明，当前的响应数据仅仅是控制数据，还是真正的响应数据。
+
+## 组发送机制
+```cpp
+/** 
+ * 是否实现rdma框架层的组发送机制，也就是将一个qp中连续的多个消息一次性发送出去。
+ * 如果使用组发送机制，则需要imm data做一些修改：imm data的前24个字节表示slot_idx，后8个字节
+ * 表示从slot_idx开始的多少个slot都是已经到来的消息。
+ */
+#define USE_GROUP_POST_SEND (true)
+#define IMM_DATA_SLOT_IDX_MASK (0xFFFFFF00)
+#define IMM_DATA_MSG_NUM_MASK (0x000000FF)
+#define IMM_DATA_SHIFT (8)
+#define GROUP_POST_SEND_MAX_MSG_NUM (200)
+#define GET_SLOT_IDX_FROM_IMM_DATA(imm_data) \
+    ((imm_data & IMM_DATA_SLOT_IDX_MASK) >> IMM_DATA_SHIFT)
+#define SET_SLOT_IDX_TO_IMM_DATA(imm_data, slot_idx) \
+    (imm_data = ((slot_idx << IMM_DATA_SHIFT) | imm_data))
+#define GET_MSG_NUM_FROM_IMM_DATA(imm_data) \
+    (imm_data & IMM_DATA_MSG_NUM_MASK)
+#define SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num) \
+    (imm_data = (msg_num | imm_data))
+
+```
+组发送机制目前只支持SharedRdmaClient，也就是说多个进程的消息可以一次性发送出去。当SharedRdmaClient的发送线程收到发送事件通知后，即可检查相关共享变量来确定有多少连续的消息要发送，imm data中用于存储组发送的参数，例如slot_idx是第一个要发送的消息的slot号，后面有连续msg_num个消息未发送，则可以在imm data中的前24bit指定slot_idx，后8个字节指定msg_num，然后这个post send的内容就是这个msg_num个slot对应的内存区域。
+
+经测试，组发送可以提高吞吐量。
+
+## 异步发送机制
+SharedRdmaClient提供了AsyncPostRequest()接口实现异步发送消息，也即post send后直接返回，不等待结果，但是AsyncPostRequest()会返回一个可调用的binder对象，以供上层在合适的时机等待参数返回。异步发送的例子是：
+```cpp
+void *response = nullptr;
+int rc = 0;
+auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc); 
+wait(&response); // 等待响应到来，response用于存储响应数据
+```
 
 
 # 问题
