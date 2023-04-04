@@ -535,7 +535,7 @@ public:
 
     template<class T>
     int PostRequest(void *send_content, uint64_t size, T callback) {
-      postRequest(send_content, size, nullptr, callback);
+      return postRequest(send_content, size, nullptr, callback);
     }
     
     /** 
