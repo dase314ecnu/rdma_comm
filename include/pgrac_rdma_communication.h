@@ -53,6 +53,14 @@ enum SlotState {
  */
 typedef struct ZSend {
     SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
+    /** 
+     * 表示每个slot上的请求者是否需要不同步等待最终的结果，如果不等待，则由发送线程来
+     * 负责更新slot的状态，否则，应该由请求进程来更新slot的状态，因为请求进程需要先
+     * 拿走结果之后，才能推进对应slot的状态。如果是发送线程来推进slot的状态，则有可能
+     * 这个slot已经可用，并且数据被别的进程覆盖了，则当前进程无法获得正确的数据。
+     * 正常情况下nowait是false，如果为true，则表示请求者希望直接异步发送请求，并且之后也不会等待结果
+     */
+    bool      *nowait = nullptr;  
     uint64_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
     uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
     uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
@@ -83,6 +91,7 @@ typedef struct ZSend {
         // 给this->states分配空间并初始化
         if (shared != 0) {
             this->states = (SlotState *)scratch;
+            scratch += sizeof(SlotState) * (_slot_num + 1);
         } else {
             this->states = new SlotState[_slot_num + 1];
             if (this->states == nullptr) {
@@ -92,20 +101,30 @@ typedef struct ZSend {
         for (int i = 0; i < _slot_num + 1; ++i) {
             this->states[i] = SlotState::SLOT_IDLE;
         }
+
+        if (shared != 0) {
+          this->nowait = (bool *)scratch;
+        } else {
+          this->nowait = new bool[_slot_num + 1];
+          if (this->nowait == nullptr) {
+            throw std::bad_exception();
+          }
+        }
+        memset(this->nowait, 0, sizeof(bool) * (_slot_num + 1));
     }
 
-    ZSend& operator=(const ZSend &other) {
-      if (this == &other) {
-        return *this;
-      }
-      this->states = other.states;
-      this->front = other.front;
-      this->notsent_front = other.front;
-      this->notsent_rear = other.notsent_rear;
-      this->rear = other.rear;
-      this->spinlock = other.spinlock;
-      return *this;
-    }
+    // ZSend& operator=(const ZSend &other) {
+    //   if (this == &other) {
+    //     return *this;
+    //   }
+    //   this->states = other.states;
+    //   this->front = other.front;
+    //   this->notsent_front = other.front;
+    //   this->notsent_rear = other.notsent_rear;
+    //   this->rear = other.rear;
+    //   this->spinlock = other.spinlock;
+    //   return *this;
+    // }
 } ZSend;
 
 typedef struct ZAwake {
@@ -455,9 +474,12 @@ protected:
       }
       (void) pthread_spin_unlock(zsend->spinlock);
     }
-
+    
+    /** 
+     * nowait: 表示是否不需要等待结果，false是默认情况，见ZSend中关于nowait的注释
+     */
     template<class T>
-    int postRequest(void *send_content, uint64_t size, void **response, T callback) {
+    int postRequest(void *send_content, uint64_t size, void **response, T callback, bool nowait) {
       if (size > this->slot_size) {
         return -1;
       }
@@ -488,6 +510,7 @@ protected:
           }
           rear                = zsend->rear;
           zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+          zsend->nowait[rear] = nowait;
           zsend->rear          = rear2;
           zsend->notsent_rear  = rear2;
 
@@ -535,7 +558,7 @@ public:
 
     template<class T>
     int PostRequest(void *send_content, uint64_t size, T callback) {
-      return postRequest(send_content, size, nullptr, callback);
+      return postRequest(send_content, size, nullptr, callback, false);
     }
     
     /** 
