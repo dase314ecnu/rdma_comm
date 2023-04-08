@@ -567,7 +567,12 @@ public:
     auto AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
         -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
         (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1));
-
+    
+    /** 
+     * 和AsyncPostRequest()类似，但是上层不需要等待结果
+     */
+    void AsyncPostRequestNowait(void *send_content, uint64_t size, int *ret);
+    
     /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
      * 以及需要共享的数据的总大小。
      * 这个函数和SharedRdmaClient(), RdmaClient(), createRdmaQueuePairs()函数紧耦合了。

@@ -1385,6 +1385,56 @@ auto SharedRdmaClient::AsyncPostRequest(void *send_content, uint64_t size, int* 
   }
 }
 
+/* @todo:  AsyncPostRequestNowait()和AsyncPostRequest()有很多相似的代码 */
+void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, uint64_t size, int *ret) {
+  if (size > this->slot_size) {
+    *ret = -1;
+  }
+  char c;
+  int  rc = 0;
+
+  int start = 0;
+  /** 
+   * 采用round robin法来实现负载均衡
+   */
+  pthread_spin_lock(&(this->start_idx_lock));
+  start = this->start_idx;
+  this->start_idx = (this->start_idx + 1) % this->node_num;
+  pthread_spin_unlock(&(this->start_idx_lock));
+
+  while (true) {
+    for (int j = 0; j < this->node_num; ++j) {
+      int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+      
+      ZSend  *zsend = &this->sends[i];
+      ZAwake *zawake = &this->awakes[i];
+      uint64_t rear = 0;
+      (void) pthread_spin_lock(zsend->spinlock);
+      uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
+      if (rear2 == zsend->front) {
+        (void) pthread_spin_unlock(zsend->spinlock);
+        continue;
+      }
+      rear                = zsend->rear;
+      zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+      zsend->rear          = rear2;
+      zsend->notsent_rear  = rear2;
+
+      char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+              + rear * this->slot_size;
+      memcpy(buf, send_content, size);
+      (void) pthread_spin_unlock(zsend->spinlock);
+      
+      rc = send(this->listen_fd[i * 2], &c, 1, 0); 
+      if (rc <= 0) {
+        *ret = -1;
+      }
+
+      *ret = 0;
+    }
+  }
+}
+
 uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
             uint32_t _node_num) 
 {
