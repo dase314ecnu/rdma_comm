@@ -898,7 +898,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           send->states[slot_idx] = SlotState::SLOT_IDLE;
           if (slot_idx == send->front) {
             uint64_t p = slot_idx;
-            while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
+            while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
               p = (p + 1) % (this->slot_num + 1);
             }
             send->front = p;
@@ -1136,7 +1136,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             send->states[slot_idx] = SlotState::SLOT_IDLE;
             if (slot_idx == send->front) {
               uint64_t p = slot_idx;
-              while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
+              while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
                 p = (p + 1) % (this->slot_num + 1);
               }
               send->front = p;
