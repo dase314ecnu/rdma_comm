@@ -69,7 +69,7 @@ void TestSharedClientClass::runClient() {
             //         test_process_idx, j, MessageUtil::parseLength(response));
             // free(response);
 
-            if (j % 10 == 9) {
+            if (j % 10 == 11) {
                 int ret;
                 rdma_client->AsyncPostRequestNowait((void *)send_buf, length, &ret);
             } else {
