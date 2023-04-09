@@ -890,17 +890,20 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         } else {
           awake->done[slot_idx] = true;
         }
-        // (void) pthread_spin_lock(send->spinlock);
-        // // slot_idx号的slot可以被标记为空闲了
-        // send->states[slot_idx] = SlotState::SLOT_IDLE;
-        // if (slot_idx == send->front) {
-        //   uint64_t p = slot_idx;
-        //   while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
-        //     p = (p + 1) % (this->slot_num + 1);
-        //   }
-        //   send->front = p;
-        // }
-        // (void) pthread_spin_unlock(send->spinlock);
+        (void) pthread_spin_lock(send->spinlock);
+        // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
+        if (send->nowait[slot_idx] == true) {
+          send->states[slot_idx] = SlotState::SLOT_IDLE;
+          if (slot_idx == send->front) {
+            uint64_t p = slot_idx;
+            while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
+              send->nowait[p] = false; // 重置nowait标记
+              p = (p + 1) % (this->slot_num + 1);
+            }
+            send->front = p;
+          }
+        }
+        (void) pthread_spin_unlock(send->spinlock);
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         send_cnt++;
         LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
@@ -1131,6 +1134,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             if (slot_idx == send->front) {
               uint64_t p = slot_idx;
               while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
+                send->nowait[p] = false; // 重置nowait标记
                 p = (p + 1) % (this->slot_num + 1);
               }
               send->front = p;
