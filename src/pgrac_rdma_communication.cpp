@@ -1417,6 +1417,7 @@ void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, uint64_t size,
       }
       rear                = zsend->rear;
       zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+      zsend->nowait[rear] = true;
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
 
