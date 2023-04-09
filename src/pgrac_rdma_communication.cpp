@@ -884,11 +884,13 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (qp->PostReceive() != 0) {
           return;
         }
-
-        if (!USE_BUSY_POLLING) {
-          (void) sem_post(&(awake->sems[slot_idx]));
-        } else {
-          awake->done[slot_idx] = true;
+        
+        if (send->nowait[slot_idx] == false) {
+          if (!USE_BUSY_POLLING) {
+            (void) sem_post(&(awake->sems[slot_idx]));
+          } else {
+            awake->done[slot_idx] = true;
+          }
         }
         (void) pthread_spin_lock(send->spinlock);
         // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
@@ -897,7 +899,6 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           if (slot_idx == send->front) {
             uint64_t p = slot_idx;
             while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
-              send->nowait[p] = false; // 重置nowait标记
               p = (p + 1) % (this->slot_num + 1);
             }
             send->front = p;
@@ -1122,10 +1123,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             return false;
           }
           
-          if (!USE_BUSY_POLLING) {
-            (void) sem_post(&(awake->sems[slot_idx]));
-          } else {
-            awake->done[slot_idx] = true;
+          if (send->nowait[slot_idx] == false) {
+            if (!USE_BUSY_POLLING) {
+              (void) sem_post(&(awake->sems[slot_idx]));
+            } else {
+              awake->done[slot_idx] = true;
+            }
           }
           (void) pthread_spin_lock(send->spinlock);
           // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
@@ -1134,7 +1137,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             if (slot_idx == send->front) {
               uint64_t p = slot_idx;
               while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE && send->nowait[p] == true) {
-                send->nowait[p] = false; // 重置nowait标记
                 p = (p + 1) % (this->slot_num + 1);
               }
               send->front = p;
@@ -1368,6 +1370,7 @@ auto SharedRdmaClient::AsyncPostRequest(void *send_content, uint64_t size, int* 
       }
       rear                = zsend->rear;
       zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+      zsend->nowait[rear] = false;
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
 
