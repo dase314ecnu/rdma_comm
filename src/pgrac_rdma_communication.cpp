@@ -1436,9 +1436,11 @@ void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, uint64_t size,
       rc = send(this->listen_fd[i * 2], &c, 1, 0); 
       if (rc <= 0) {
         *ret = -1;
+        return;
       }
 
       *ret = 0;
+      return;
     }
   }
 }
