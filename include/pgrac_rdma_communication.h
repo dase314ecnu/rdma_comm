@@ -50,6 +50,10 @@ enum SlotState {
  * 当没有slot可以用时，空转轮询，而不是用条件变量等待。
  * 因为我们有个假设：slot都不可用的概率很小。如果使用条件变量，则我们
  * 必须使用pthread_mutext_t来保护ZSend，很显然，效率不好。
+ * 
+ * @todo: 为了实现字节对齐，需要写一个函数，例如是allocate()，然后这个函数负责
+ * 将一个结构体在对应的buffer中分配好。还要写一个函数，来计算所需要的总共的共享内存
+ * 大小
  */
 typedef struct ZSend {
     SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
@@ -61,6 +65,11 @@ typedef struct ZSend {
      * 正常情况下nowait是false，如果为true，则表示请求者希望直接异步发送请求，并且之后也不会等待结果
      */
     bool      *nowait = nullptr;  
+    /** 
+     * 由于分片机制，所以又可能是某些slot组成一个消息，那么segment_nums[i]表示从i号slot
+     * 开始的segment_nums[i]个slot是组成一个消息
+     */
+    int       *segment_nums = nullptr;
     uint64_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
     uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
     uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
@@ -104,6 +113,7 @@ typedef struct ZSend {
 
         if (shared != 0) {
           this->nowait = (bool *)scratch;
+          scratch += sizeof(bool) * (_slot_num + 1);
         } else {
           this->nowait = new bool[_slot_num + 1];
           if (this->nowait == nullptr) {
@@ -111,20 +121,25 @@ typedef struct ZSend {
           }
         }
         memset(this->nowait, 0, sizeof(bool) * (_slot_num + 1));
+
+        if (shared != 0) {
+          this->segment_nums = (int *)scratch;
+        } else {
+          this->segment_nums = new int[_slot_num + 1];
+          if (this->segment_nums == nullptr) {
+            throw std::bad_exception();
+          }
+        }
+        memset(this->segment_nums, 0, sizeof(int) * (_slot_num + 1));
     }
 
-    // ZSend& operator=(const ZSend &other) {
-    //   if (this == &other) {
-    //     return *this;
-    //   }
-    //   this->states = other.states;
-    //   this->front = other.front;
-    //   this->notsent_front = other.front;
-    //   this->notsent_rear = other.notsent_rear;
-    //   this->rear = other.rear;
-    //   this->spinlock = other.spinlock;
-    //   return *this;
-    // }
+    static uint64_t GetSharedObjSize(uint64_t slot_num) {
+      uint64_t size = 0;
+      size += sizeof(ZSend);
+      size += sizeof(SlotState) * (slot_num + 1) + sizeof(pthread_spinlock_t) + sizeof(bool) * (slot_num + 1)
+              + sizeof(int) * (slot_num + 1);
+      return size;
+    }
 } ZSend;
 
 typedef struct ZAwake {
@@ -174,6 +189,14 @@ typedef struct ZAwake {
         for (int i = 0; i < _slot_num + 1; ++i) {
           this->done[i] = false;
         }
+    }
+
+    static uint64_t GetSharedObjSize(uint64_t slot_num) {
+      uint64_t size = 0;
+      size += sizeof(ZAwake);
+      size += sizeof(sem_t) * (slot_num + 1);
+      size += sizeof(volatile bool) * (slot_num + 1);
+      return size;
     }
 } ZAwake;
 
@@ -374,12 +397,47 @@ public:
     int PostRequest(void *send_content, uint64_t size);
 };
 
-// /* 从消息缓冲区中解析出前4个字节的长度字段 */
-// static int parseLength(void *buf) 
+/** 
+ * 分片机制：
+ * 将一个消息数据保存到多个slot分片中。假如我们的slot的编号是[1, 100)，且rear是98，
+ * 假如我们的数据大小是2个slot，则可以将98号slot设置为SLOT_SEGMENT_TYPE_FIRST，将
+ * 99号slot设置为SLOT_SEGMENT_TYPE_LAST。如果我们的数据大小是3个slot，则可以将
+ * 98, 99号slot设置为SLOT_SEGMENT_TYPE_NODATA，将0号slot设置为SLOT_SEGMENT_TYPE_FIRST,
+ * 将1号slot设置为SLOT_SEGMENT_TYPE_MORE，将2号slot设置为SLOT_SEGMENT_TYPE_LAST，然后将
+ * 5个slot发送出去。
+ */
+enum SlotSegmentType {
+  /* 这个slot没有数据 */
+  SLOT_SEGMENT_TYPE_NODATA,
+  /* 这个slot是正常的slot，保存有数据，并且数据长度在一个slot内 */
+  SLOT_SEGMENT_TYPE_NORMAL,
+  /* 这个slot是一个分片slot，并且是第一个分片 */
+  SLOT_SEGMENT_TYPE_FIRST,
+  /* 这个slot是一个分片slot，并且是中间的一个分片 */
+  SLOT_SEGMENT_TYPE_MORE,
+  /* 这个slot是一个分片slot，并且是最后一个分片 */
+  SLOT_SEGMENT_TYPE_LAST,
+  /* 未定义 */
+  SLOT_SEGMENT_OTHER
+};
+/* SlotMeta是保存在每个slot前面的元数据 */
+typedef struct SlotMeta {
+  /** 分片属性 */
+  SlotSegmentType slot_segment_type;
+} SlotMeta;
+
+/** 
+ * 从消息缓冲区中解析出4个字节的长度字段
+ */
 class MessageUtil {
 public:
   static int parseLength(void *buf) {
+    // char *b = (char *)buf;
+    // int *length = reinterpret_cast<int *>(b);
+    // return *length;
+
     char *b = (char *)buf;
+    b = b + sizeof(SlotMeta);
     int *length = reinterpret_cast<int *>(b);
     return *length;
   }
@@ -401,6 +459,11 @@ public:
  * 以上逻辑在PostRequest()中实现
  * 
  * 由于这个类要创建在共享内存中，所以父类不应该有虚函数。
+ * 
+ * 每个slot的前面都是一个元数据结构体，这个元数据过后才是真正要传输的数据；元数据是为了某些特性而使用，比如分片机制。
+ * 
+ * 分片机制：由于一个slot可能无法保存很大的请求消息，因此我们需要将一个消息分片，放在多个slot中进行发送，接收端将
+ * 这个多个分片的slot组合成一个完整的消息。
  */
 class SharedRdmaClient : public RdmaClient {
     friend class TestSharedMemoryClass;
@@ -443,6 +506,19 @@ protected:
      */
     int rrLoadBalanceStrategy(void *send_content, uint64_t size, bool nowait, 
             uint64_t *out_node_idx, uint64_t *out_rear);
+    
+    /* 由于分片机制，需要确定一个消息需要多少个slot分片来发送 */
+    int getNeededSegmentNum(uint64_t size);
+
+    /** 
+     * 由于分片机制，检查node_idx号node是否可以用于发送数据。若slot有100个，是0 - 99，
+     * 若rear是9，segment_num是2，则需要分配0, 1号slot来发送数据，而不是99, 0号slot。
+     * 若可以的话，则将send_content中的内容填充到对应的slot中。
+     * 注意：若成功返回，则调用者需要负责释放node_idx号的zsend的spinlock。
+     * 
+     * rear2: 输出参数。如果成功check，则更新后的rear是什么
+     */
+    bool checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, uint64_t *rear2);
     
     /** 
      * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)
@@ -489,55 +565,6 @@ protected:
      */
     template<class T>
     int postRequest(void *send_content, uint64_t size, void **response, T callback, bool nowait) {
-      // if (size > this->slot_size) {
-      //   return -1;
-      // }
-      // char c;
-      // int  rc = 0;
-
-      // int start = 0;
-      // /** 
-      //  * 采用round robin法来实现负载均衡
-      //  */
-      // pthread_spin_lock(&(this->start_idx_lock));
-      // start = this->start_idx;
-      // this->start_idx = (this->start_idx + 1) % this->node_num;
-      // pthread_spin_unlock(&(this->start_idx_lock));
-
-      // while (true) {
-      //   for (int j = 0; j < this->node_num; ++j) {
-      //     int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
-          
-      //     ZSend  *zsend = &this->sends[i];
-      //     ZAwake *zawake = &this->awakes[i];
-      //     uint64_t rear = 0;
-      //     (void) pthread_spin_lock(zsend->spinlock);
-      //     uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
-      //     if (rear2 == zsend->front) {
-      //       (void) pthread_spin_unlock(zsend->spinlock);
-      //       continue;
-      //     }
-      //     rear                = zsend->rear;
-      //     zsend->states[rear] = SlotState::SLOT_INPROGRESS;
-      //     zsend->nowait[rear] = nowait;
-      //     zsend->rear          = rear2;
-      //     zsend->notsent_rear  = rear2;
-
-      //     char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
-      //             + rear * this->slot_size;
-      //     memcpy(buf, send_content, size);
-      //     (void) pthread_spin_unlock(zsend->spinlock);
-          
-      //     rc = send(this->listen_fd[i * 2], &c, 1, 0); 
-      //     if (rc <= 0) {
-      //       return -1;
-      //     }
-
-      //     this->waitForResponse(zsend, zawake, buf, rear, response, callback);
-      //     return 0;
-      //   }
-      // }
-      
       int ret = 0;
       uint64_t node_idx;
       uint64_t rear;
