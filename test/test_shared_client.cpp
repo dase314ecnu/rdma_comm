@@ -60,25 +60,25 @@ void TestSharedClientClass::runClient() {
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
             // zhouhuahui test
             LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-            // void *response = nullptr;
-            // // rdma_client->PostRequest((void *)send_buf, length, &response);
+            void *response = nullptr;
+            rdma_client->PostRequest((void *)send_buf, length, &response);
             // int rc = 0;
             // auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc); 
             // wait(&response);
-            // LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-            //         test_process_idx, j, MessageUtil::parseLength(response));
-            // free(response);
+            LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                    test_process_idx, j, MessageUtil::parseLength(response));
+            free(response);
 
-            if (j % 10 == 9) {
-                int ret;
-                rdma_client->AsyncPostRequestNowait((void *)send_buf, length, &ret);
-            } else {
-                auto callback = [&](void *response) {
-                    LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                        test_process_idx, j, MessageUtil::parseLength(response));
-                };
-                rdma_client->PostRequest((void *)send_buf, length, callback); 
-            }
+            // if (j % 10 == 9) {
+            //     int ret;
+            //     rdma_client->AsyncPostRequestNowait((void *)send_buf, length, &ret);
+            // } else {
+            //     auto callback = [&](void *response) {
+            //         LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+            //             test_process_idx, j, MessageUtil::parseLength(response));
+            //     };
+            //     rdma_client->PostRequest((void *)send_buf, length, callback); 
+            // }
         }
     };
     

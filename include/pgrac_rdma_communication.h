@@ -434,6 +434,15 @@ protected:
     /** 发送线程执行的代码 */
     void sendThreadFun(uint32_t node_idx);
     static void *sendThreadFunEntry(void *arg);
+
+    /** 
+     * 负载均衡策略为round robin的负载均衡算法。
+     * 找到一个合适的node和合适的slot，然后将send_content中的内容复制过去
+     * out_node_idx: 输出参数，找到的需要进行数据发送的node的编号
+     * out_rear: 输出参数，node_idx号node上，在rear号开始的几个slot上存放要发送的数据
+     */
+    int rrLoadBalanceStrategy(void *send_content, uint64_t size, bool nowait, 
+            uint64_t *out_node_idx, uint64_t *out_rear);
     
     /** 
      * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)
@@ -480,54 +489,67 @@ protected:
      */
     template<class T>
     int postRequest(void *send_content, uint64_t size, void **response, T callback, bool nowait) {
-      if (size > this->slot_size) {
+      // if (size > this->slot_size) {
+      //   return -1;
+      // }
+      // char c;
+      // int  rc = 0;
+
+      // int start = 0;
+      // /** 
+      //  * 采用round robin法来实现负载均衡
+      //  */
+      // pthread_spin_lock(&(this->start_idx_lock));
+      // start = this->start_idx;
+      // this->start_idx = (this->start_idx + 1) % this->node_num;
+      // pthread_spin_unlock(&(this->start_idx_lock));
+
+      // while (true) {
+      //   for (int j = 0; j < this->node_num; ++j) {
+      //     int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
+          
+      //     ZSend  *zsend = &this->sends[i];
+      //     ZAwake *zawake = &this->awakes[i];
+      //     uint64_t rear = 0;
+      //     (void) pthread_spin_lock(zsend->spinlock);
+      //     uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
+      //     if (rear2 == zsend->front) {
+      //       (void) pthread_spin_unlock(zsend->spinlock);
+      //       continue;
+      //     }
+      //     rear                = zsend->rear;
+      //     zsend->states[rear] = SlotState::SLOT_INPROGRESS;
+      //     zsend->nowait[rear] = nowait;
+      //     zsend->rear          = rear2;
+      //     zsend->notsent_rear  = rear2;
+
+      //     char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+      //             + rear * this->slot_size;
+      //     memcpy(buf, send_content, size);
+      //     (void) pthread_spin_unlock(zsend->spinlock);
+          
+      //     rc = send(this->listen_fd[i * 2], &c, 1, 0); 
+      //     if (rc <= 0) {
+      //       return -1;
+      //     }
+
+      //     this->waitForResponse(zsend, zawake, buf, rear, response, callback);
+      //     return 0;
+      //   }
+      // }
+
+      uint64_t node_idx;
+      uint64_t rear;
+      *ret = this->rrLoadBalanceStrategy(send_content, size, nowait, &node_idx, &rear);
+      if (*ret != 0) {
         return -1;
       }
-      char c;
-      int  rc = 0;
-
-      int start = 0;
-      /** 
-       * 采用round robin法来实现负载均衡
-       */
-      pthread_spin_lock(&(this->start_idx_lock));
-      start = this->start_idx;
-      this->start_idx = (this->start_idx + 1) % this->node_num;
-      pthread_spin_unlock(&(this->start_idx_lock));
-
-      while (true) {
-        for (int j = 0; j < this->node_num; ++j) {
-          int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
-          
-          ZSend  *zsend = &this->sends[i];
-          ZAwake *zawake = &this->awakes[i];
-          uint64_t rear = 0;
-          (void) pthread_spin_lock(zsend->spinlock);
-          uint64_t rear2 = (zsend->rear + 1) % (this->slot_num + 1);
-          if (rear2 == zsend->front) {
-            (void) pthread_spin_unlock(zsend->spinlock);
-            continue;
-          }
-          rear                = zsend->rear;
-          zsend->states[rear] = SlotState::SLOT_INPROGRESS;
-          zsend->nowait[rear] = nowait;
-          zsend->rear          = rear2;
-          zsend->notsent_rear  = rear2;
-
-          char *buf = (char *)this->rdma_queue_pairs[i]->GetLocalMemory() 
+      ZSend  *zsend = &this->sends[node_idx];
+      ZAwake *zawake = &this->awakes[node_idx];
+      char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                   + rear * this->slot_size;
-          memcpy(buf, send_content, size);
-          (void) pthread_spin_unlock(zsend->spinlock);
-          
-          rc = send(this->listen_fd[i * 2], &c, 1, 0); 
-          if (rc <= 0) {
-            return -1;
-          }
-
-          this->waitForResponse(zsend, zawake, buf, rear, response, callback);
-          return 0;
-        }
-      }
+      this->waitForResponse(zsend, zawake, buf, rear, response, callback);
+      return 0;
     }
 
 public:
