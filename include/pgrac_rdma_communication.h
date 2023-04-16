@@ -537,11 +537,12 @@ protected:
       //     return 0;
       //   }
       // }
-
+      
+      int ret = 0;
       uint64_t node_idx;
       uint64_t rear;
-      *ret = this->rrLoadBalanceStrategy(send_content, size, nowait, &node_idx, &rear);
-      if (*ret != 0) {
+      ret = this->rrLoadBalanceStrategy(send_content, size, nowait, &node_idx, &rear);
+      if (ret != 0) {
         return -1;
       }
       ZSend  *zsend = &this->sends[node_idx];
