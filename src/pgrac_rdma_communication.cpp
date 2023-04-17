@@ -1133,7 +1133,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           (void) pthread_spin_lock(send->spinlock);
           // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
           if (send->nowait[slot_idx] == true) {
-            send->states[slot_idx] = SlotState::SLOT_IDLE;
+            for (int k = 0; k < send->segment_nums[slot_idx]; ++k) {
+              uint64_t p = (slot_idx + k) % (this->slot_num + 1);
+              send->states[p] = SlotState::SLOT_IDLE;
+            }
             if (slot_idx == send->front) {
               uint64_t p = slot_idx;
               while (p != send->rear && send->states[p] == SlotState::SLOT_IDLE) {
@@ -1384,6 +1387,12 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
       zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
+      /** 
+       * 如果zsend->front号slot的状态是SlotState::SLOT_IDLE，则需要向前移动。
+       */
+      while (zsend->states[zsend->front] == SlotState::SLOT_IDLE) {
+        zsend->front = (zsend->front + 1) % (this->slot_num + 1);
+      }
       
       (void) pthread_spin_unlock(zsend->spinlock);
       

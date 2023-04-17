@@ -440,6 +440,12 @@ public:
     return *length;
   }
 
+  static int parseLength2(void *buf) {
+    char *b = (char *)buf;
+    int *length = reinterpret_cast<int *>(b);
+    return *length;
+  }
+
   static int parsePacketLength(void *buf) {
     SlotMeta *meta = (SlotMeta *)buf;
     return meta->size;
@@ -525,6 +531,7 @@ protected:
     bool checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, 
             uint64_t *start_rear, uint64_t *rear2);
     
+    // @todo
     /** 
      * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)
      * 如果callback为空，则需要将buf复制到上层，让上层去处理。
@@ -543,7 +550,7 @@ protected:
         // 此时response必不能为空
         // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
         // 响应中的前四个字节必定是长度字段
-        int length = MessageUtil::parseLength(buf);
+        int length = MessageUtil::parseLength2(buf);
         *response = malloc(length);
         memcpy(*response, buf, length);
       } else {
@@ -552,7 +559,10 @@ protected:
 
       // 更新zsend中的一些元信息，也就是推进zsend->front
       (void) pthread_spin_lock(zsend->spinlock);
-      zsend->states[rear] = SlotState::SLOT_IDLE;
+      for (int k = 0; k < send->segment_nums[rear]; ++k) {
+        uint64_t p = (rear + k) % (this->slot_num + 1);
+        send->states[p] = SlotState::SLOT_IDLE;
+      }
       if (rear == zsend->front) {
         uint64_t p = rear;
         while (p != zsend->notsent_front
@@ -1226,7 +1236,7 @@ int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx, void *resp
     return -1;
   }
   RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
-  int length = MessageUtil::parseLength(response);
+  int length = MessageUtil::parseLength2(response);
   if (length < 4) {
     return -1;
   }
