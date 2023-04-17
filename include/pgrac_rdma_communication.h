@@ -407,7 +407,7 @@ public:
  * 5个slot发送出去。
  */
 enum SlotSegmentType {
-  /* 这个slot没有数据 */
+  /* 这个slot没有数据，也意味着这个slot不会有回复 */
   SLOT_SEGMENT_TYPE_NODATA,
   /* 这个slot是正常的slot，保存有数据，并且数据长度在一个slot内 */
   SLOT_SEGMENT_TYPE_NORMAL,
@@ -424,6 +424,8 @@ enum SlotSegmentType {
 typedef struct SlotMeta {
   /** 分片属性 */
   SlotSegmentType slot_segment_type;
+  /* 整个packet的长度 */
+  int size; 
 } SlotMeta;
 
 /** 
@@ -432,14 +434,15 @@ typedef struct SlotMeta {
 class MessageUtil {
 public:
   static int parseLength(void *buf) {
-    // char *b = (char *)buf;
-    // int *length = reinterpret_cast<int *>(b);
-    // return *length;
-
     char *b = (char *)buf;
     b = b + sizeof(SlotMeta);
     int *length = reinterpret_cast<int *>(b);
     return *length;
+  }
+
+  static int parsePacketLength(void *buf) {
+    SlotMeta *meta = (SlotMeta *)buf;
+    return meta->size;
   }
 };
 
@@ -516,9 +519,11 @@ protected:
      * 若可以的话，则将send_content中的内容填充到对应的slot中。
      * 注意：若成功返回，则调用者需要负责释放node_idx号的zsend的spinlock。
      * 
+     * start_rear: 从start_rear开始填充的数据
      * rear2: 输出参数。如果成功check，则更新后的rear是什么
      */
-    bool checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, uint64_t *rear2);
+    bool checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, 
+            uint64_t *start_rear, uint64_t *rear2);
     
     /** 
      * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)

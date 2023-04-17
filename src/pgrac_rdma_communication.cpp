@@ -1176,9 +1176,15 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       if (!USE_GROUP_POST_SEND) {
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
+          // 如果是 SlotState::SLOT_IDLE，或者slot_segment_type是SLOT_SEGMENT_TYPE_NODATA
+          // 或者packet length是sizeof(SlotMeta)，则说明这个slot不用发
+          if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
+            slot_idx = (slot_idx + 1) % (this->slot_num + 1);
+            continue;
+          }
           char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                 + slot_idx * this->slot_size;
-          int size = MessageUtil::parseLength(buf);
+          int size = MessageUtil::parsePacketLength(buf);
           rc = this->rdma_queue_pairs[node_idx]->PostSend(slot_idx, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
@@ -1192,10 +1198,16 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         /* 实现组发送机制 */
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
+          if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
+            slot_idx = (slot_idx + 1) % (this->slot_num + 1);
+            continue;
+          }
           uint32_t msg_num = 1;
+          uint32_t real_msg_num = 1;
           // 组合发送的消息不能超过GROUP_POST_SEND_MAX_MSG_NUM
           if (send->notsent_rear > slot_idx) {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(send->notsent_rear - slot_idx));
+            real_msg_num = 
           } else {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(this->slot_num + 1 - slot_idx));
           }
@@ -1205,7 +1217,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           // size是所有消息个数乘以slot_size的结果。
           int size = this->slot_size * msg_num;
           if (msg_num == 1) {
-            size = MessageUtil::parseLength(buf);
+            size = MessageUtil::parsePacketLength(buf);
           }
           uint32_t imm_data = 0;
           SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)slot_idx);
@@ -1347,14 +1359,18 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       ZSend  *zsend = &this->sends[i];
       ZAwake *zawake = &this->awakes[i];
       uint64_t rear = 0;
-
+      
+      uint64_t start_rear;
       uint64_t rear2;
-      if (this->checkNodeCanSend(i, send_content, size, &rear2) == false) {
+      if (this->checkNodeCanSend(i, send_content, size, &start_rear, &rear2) == false) {
         continue;
       }
 
       rear                = zsend->rear;
-      for (uint64_t k = rear; k != rear2; k = (k + 1) % (this->slot_num + 1)) {
+      for (uint64_t k = rear; k != start_rear; k = (k + 1) % (this->slot_num + 1)) {
+        zsend->states[k] = SlotState::SLOT_IDLE;
+      }
+      for (uint64_t k = start_rear; k != rear2; k = (k + 1) % (this->slot_num + 1)) {
         zsend->states[k] = SlotState::SLOT_INPROGRESS;
         zsend->nowait[k] = nowait;
       }
@@ -1372,7 +1388,7 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
         *out_node_idx = i;
       }
       if (out_rear) {
-        *out_rear = rear;
+        *out_rear = start_rear;
       }
       return 0;
     }
@@ -1395,7 +1411,8 @@ int SharedRdmaClient::getNeededSegmentNum(uint64_t size) {
   return num;
 }
 
-bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, uint64_t *rear2) {
+bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, 
+        uint64_t *start_rear, uint64_t *rear2) {
   ZSend  *zsend = &this->sends[node_idx];
   ZAwake *zawake = &this->awakes[node_idx];
   int segment_num = this->getNeededSegmentNum(size);
@@ -1428,7 +1445,11 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
               + k * this->slot_size;
         SlotMeta *meta = (SlotMeta *)buf;
         meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_NODATA;
+        meta->size = sizeof(SlotMeta);
       }
+    }
+    if (start_rear) {
+      *start_rear = start_slot_idx;
     }
     uint64_t left_size = size;
     bool first = true;
@@ -1442,10 +1463,12 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
         memcpy(buf, content, left_size);
         left_size = 0;
         content += left_size;
+        meta->size = left_size + sizeof(SlotMeta);
       } else {
         memcpy(buf, content, this->slot_size - sizeof(SlotMeta));
         left_size -= (this->slot_size - sizeof(SlotMeta));
         content += (this->slot_size - sizeof(SlotMeta));
+        meta->size = this->slot_size;
       }
       if (first) {
         if (left_size == 0) {
