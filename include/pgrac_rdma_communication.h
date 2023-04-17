@@ -701,6 +701,14 @@ protected:
      */
     int  dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
             uint32_t &remote_compute_id, QueuePairMeta &remote_meta);
+    
+    /** 
+     * 由于分片机制：
+     * 将last_head到slot_idx号slot之间的所有分片都合并在一起，合并后的消息的首地址在
+     * last_head号slot的sizeof(SlotMeta)偏移处。
+     * 注意：确保last_head到slot_idx号slot确实是一个消息的分片
+     */
+    void mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx, uint32_t node_idx);
 
 public:
     /** 
@@ -882,6 +890,12 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
   LOG_DEBUG("RdmaServer receive thread of %u, success to add channel fd of %d to waitset"
           ", start to wait for requests", node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
   
+  /** 
+   * 由于分片机制。
+   * 如果遇到了一个slot，他的meta中显示是SLOT_SEGMENT_TYPE_FIRST，则将这个slot的号赋值到last_head中。
+   * 如果遇到了一个slot，他的meta中显示是SLOT_SEGMENT_TYPE_LAST，则将这个last_head到这个slot是一个完整的消息。
+   */
+  uint32_t last_head;
   // 循环等待消息到来，并交给处理线程池中进行处理
   while (!this->stop) {
     int rc;
@@ -930,12 +944,26 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
         for (int j = 0; j < msg_num; ++j) {
           char    *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + 
                   slot_idx * this->slot_size;
-          // 调用工作线程池的接口，将请求发给工作线程池进行处理
-          this->worker_threadpool->Start(buf, node_idx, slot_idx);
+          SlotMeta *meta = (SlotMeta *)buf;
+          if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL) {
+            buf = buf + sizeof(SlotMeta);
+            // 调用工作线程池的接口，将请求发给工作线程池进行处理
+            this->worker_threadpool->Start(buf, node_idx, slot_idx);
+          } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST) {
+            last_head = slot_idx;
+          } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_MORE) {
+            // ....
+          } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
+            this->mergeMultipleSegments(last_head, slot_idx, node_idx);
+            char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
+                    last_head * this->slot_size;
+            buf += sizeof(SlotMeta);
+            // 调用工作线程池的接口，将请求发给工作线程池进行处理
+            this->worker_threadpool->Start(buf, node_idx, last_head);
+          }
           slot_idx++;
         }
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-        // zhouhuahui test
         send_cnt++;
         LOG_DEBUG("RdmaServer receive thread of %u, have sent %lu responses", 
           node_idx, send_cnt);
@@ -1062,6 +1090,23 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   }
 
   return 0;
+}
+
+template<typename T>
+void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx, uint32_t node_idx) {
+  char *dest_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
+          (last_head + 1) * this->slot_size;
+  for (uint32_t k = last_head + 1; ; k = (k + 1) % (this->slot_num + 1)) {
+    if (k == slot_idx) {
+      break;
+    }
+    char *src_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
+          k * this->slot_size;
+    int len = MessageUtil::parseLength(src_buf);
+    src_buf += sizeof(SlotMeta);
+    memmove(dest_buf, src_buf, len);
+    dest_buf += len;
+  }
 }
 
 

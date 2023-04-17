@@ -1207,21 +1207,28 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           // 组合发送的消息不能超过GROUP_POST_SEND_MAX_MSG_NUM
           if (send->notsent_rear > slot_idx) {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(send->notsent_rear - slot_idx));
-            real_msg_num = 
           } else {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(this->slot_num + 1 - slot_idx));
+          }
+          /** 
+           * 由于slot_idx到slot_idx + msg_num - 1号的slot可能是有空slot的（由于分片机制），
+           * 所以可以不用发这部分slot，这就是msg_num和real_msg_num的区别。
+           */
+          real_msg_num = msg_num;
+          while (send->states[slot_idx + real_msg_num - 1] == SlotState::SLOT_IDLE) {
+            real_msg_num--;
           }
 
           char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                   + slot_idx * this->slot_size;
           // size是所有消息个数乘以slot_size的结果。
-          int size = this->slot_size * msg_num;
-          if (msg_num == 1) {
+          int size = this->slot_size * real_msg_num;
+          if (real_msg_num == 1) {
             size = MessageUtil::parsePacketLength(buf);
           }
           uint32_t imm_data = 0;
           SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)slot_idx);
-          SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num);
+          SET_MSG_NUM_TO_IMM_DATA(imm_data, real_msg_num);
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
@@ -1376,6 +1383,7 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       }
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
+      zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
       
       (void) pthread_spin_unlock(zsend->spinlock);
       
