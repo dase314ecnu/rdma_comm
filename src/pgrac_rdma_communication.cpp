@@ -1243,13 +1243,13 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
             return false;
           }
+          // zhouhuahui test
+          LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): post a send: slot_idx: %lu"
+                  ", end_idx: %lu", slot_idx, slot_idx + real_msg_num - 1);
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
         }
         send->notsent_front = send->notsent_rear;
       }
-      // zhouhuahui test
-      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): over to post send. send->"
-              "notsent_front: %lu, send->notsend_rear: %lu", send->notsent_front, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
 
       return true;
