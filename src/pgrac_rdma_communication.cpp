@@ -1478,9 +1478,9 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
       buf += sizeof(SlotMeta);
       if (left_size + sizeof(SlotMeta) <= this->slot_size) {
         memcpy(buf, content, left_size);
-        left_size = 0;
         content += left_size;
         meta->size = left_size + sizeof(SlotMeta);
+        left_size = 0;
       } else {
         memcpy(buf, content, this->slot_size - sizeof(SlotMeta));
         left_size -= (this->slot_size - sizeof(SlotMeta));
