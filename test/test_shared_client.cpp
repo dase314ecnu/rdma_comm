@@ -48,36 +48,78 @@ void TestSharedClientClass::runClient() {
     _shared_memory = _shared_memory + sizeof(int) * 2 * _node_num;
     
     // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
+    // auto func = [&] (uint32_t test_process_idx) {
+    //     char content[20] = "zhouhuahui";
+    //     int length = sizeof(int) + strlen(content) + 1;
+    //     char send_buf[1000];
+    //     char *pointer = send_buf;
+    //     memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
+    //     pointer += sizeof(int);
+    //     memcpy(pointer, content, strlen(content) + 1);
+        
+    //     for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
+    //         // LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
+    //         // void *response = nullptr;
+    //         // // rdma_client->PostRequest((void *)send_buf, length, &response);
+    //         // int rc = 0;
+    //         // auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc); 
+    //         // wait(&response);
+    //         // LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+    //         //         test_process_idx, j, MessageUtil::parseLength(response));
+    //         // free(response);
+
+    //         if (j % 10 == 9) {
+    //             int ret;
+    //             rdma_client->AsyncPostRequestNowait((void *)send_buf, length, &ret);
+    //         } else {
+    //             auto callback = [&](void *response) {
+    //                 LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+    //                     test_process_idx, j, MessageUtil::parseLength2(response));
+    //             };
+    //             rdma_client->PostRequest((void *)send_buf, length, callback); 
+    //         }
+    //     }
+    // };
+
     auto func = [&] (uint32_t test_process_idx) {
-        char content[20] = "zhouhuahui";
-        int length = sizeof(int) + strlen(content) + 1;
-        char send_buf[1000];
-        char *pointer = send_buf;
-        memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-        pointer += sizeof(int);
-        memcpy(pointer, content, strlen(content) + 1);
+        // char content[20] = "zhouhuahui";
+        // int length = sizeof(int) + strlen(content) + 1;
+        // char send_buf[1000];
+        // char *pointer = send_buf;
+        // memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
+        // pointer += sizeof(int);
+        // memcpy(pointer, content, strlen(content) + 1);
+
+        char content[100000];
+        int *length = (int *)content;
+        *length = 5 * this->_slot_size;
+        char *buf = content + sizeof(int);
+        for (int i = 0; i < 5 * this->_slot_size - 1; ++i) {
+            buf[i] = 'a' + i % 20;
+        }
+        buf[5 * this->_slot_size - 1] = '\0';
+        *length += sizeof(int);
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
-            // zhouhuahui test
-            // LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-            // void *response = nullptr;
-            // // rdma_client->PostRequest((void *)send_buf, length, &response);
-            // int rc = 0;
-            // auto wait = rdma_client->AsyncPostRequest((void *)send_buf, length, &rc); 
-            // wait(&response);
-            // LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-            //         test_process_idx, j, MessageUtil::parseLength(response));
-            // free(response);
+            LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
 
             if (j % 10 == 9) {
                 int ret;
-                rdma_client->AsyncPostRequestNowait((void *)send_buf, length, &ret);
+                rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
+            } else if (j % 10 == 8) {
+                void *response = nullptr;
+                int rc = 0;
+                auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
+                wait(&response);
+                LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                        test_process_idx, j, MessageUtil::parseLength(response));
+                free(response);
             } else {
                 auto callback = [&](void *response) {
                     LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
                         test_process_idx, j, MessageUtil::parseLength2(response));
                 };
-                rdma_client->PostRequest((void *)send_buf, length, callback); 
+                rdma_client->PostRequest((void *)content, *length, callback); 
             }
         }
     };
