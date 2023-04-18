@@ -1203,6 +1203,8 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         send->notsent_front = send->notsent_rear;
       } else {
+        // zhouhuahui test
+        LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): start to post a send");
         /* 实现组发送机制 */
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
