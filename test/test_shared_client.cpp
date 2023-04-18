@@ -82,22 +82,14 @@ void TestSharedClientClass::runClient() {
     // };
 
     auto func = [&] (uint32_t test_process_idx) {
-        // char content[20] = "zhouhuahui";
-        // int length = sizeof(int) + strlen(content) + 1;
-        // char send_buf[1000];
-        // char *pointer = send_buf;
-        // memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-        // pointer += sizeof(int);
-        // memcpy(pointer, content, strlen(content) + 1);
-
         char content[100000];
         int *length = (int *)content;
-        *length = 5 * this->_slot_size;
+        *length = 200 * this->_slot_size;
         char *buf = content + sizeof(int);
-        for (int i = 0; i < 5 * this->_slot_size - 1; ++i) {
+        for (int i = 0; i < 200 * this->_slot_size - 1; ++i) {
             buf[i] = 'a' + i % 20;
         }
-        buf[5 * this->_slot_size - 1] = '\0';
+        buf[200 * this->_slot_size - 1] = '\0';
         *length += sizeof(int);
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
