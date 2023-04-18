@@ -572,6 +572,9 @@ protected:
         }
         zsend->front = p;
       }
+      // zhouhuahui test
+      LOG_DEBUG("zhouhuahui test: waitForResponse(): update zsend: msg start slot idx: %lu, zsend->front: "
+              "%lu, zsend->rear: %lu", rear, zsend->front, zsend->rear);
       (void) pthread_spin_unlock(zsend->spinlock);
     }
     

@@ -1144,6 +1144,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
               }
               send->front = p;
             }
+            // zhouhuahui test
+            LOG_DEBUG("zhouhuahui test: sendThreadFun(): update zsend: msg start slot idx: %lu, zsend->front: "
+                    "%lu, zsend->rear: %lu", slot_idx, send->front, send->rear);
           }
           (void) pthread_spin_unlock(send->spinlock);
 
@@ -1390,6 +1393,10 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       while (zsend->states[zsend->front] == SlotState::SLOT_IDLE) {
         zsend->front = (zsend->front + 1) % (this->slot_num + 1);
       }
+
+      // zhouhuahui test
+      LOG_DEBUG("zhouhuahui test: rrLoadBalanceStrategy(): update zsend: msg start slot idx: %lu, zsend->front: "
+              "%lu, zsend->rear: %lu", start_rear, zsend->front, zsend->rear);
       
       (void) pthread_spin_unlock(zsend->spinlock);
       
