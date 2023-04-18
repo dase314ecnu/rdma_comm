@@ -1348,9 +1348,6 @@ void SharedRdmaClient::Destroy() {
 int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, bool nowait, 
             uint64_t *out_node_idx, uint64_t *out_rear)
 {
-  if (size > this->slot_size) {
-    return -1;
-  }
   char c;
   int  rc = 0;
 

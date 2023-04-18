@@ -112,7 +112,7 @@ void TestSharedClientClass::runClient() {
                 auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
                 wait(&response);
                 LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                        test_process_idx, j, MessageUtil::parseLength(response));
+                        test_process_idx, j, MessageUtil::parseLength2(response));
                 free(response);
             } else {
                 auto callback = [&](void *response) {
@@ -159,14 +159,14 @@ int main() {
     if (IS_SERVER) {
         // 由于是测试，所以我写的工作线程很简单，所有工作线程都从一个队列中取数据
         // 因此如果将工作线程的数量设置的太大，则会大大增加竞争，性能非常差
-        test.TestSimpleServer2(IsServer{}, 3, 10, 5, 64, 5); 
+        test.TestSimpleServer2(IsServer{}, 3, 10, 5, 64, 500); 
     } else {
         // node_num: 5
         // slot_size: 64
         // slot_num: 500
         // num_test_thread: 100  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 100 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 5, 64, 5, 100, 1000);
+        test.TestSimpleServer2(IsClient{}, 5, 64, 500, 100, 1000);
     }
 }
 
