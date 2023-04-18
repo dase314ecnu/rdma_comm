@@ -75,7 +75,7 @@ void TestSharedClientClass::runClient() {
             } else {
                 auto callback = [&](void *response) {
                     LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                        test_process_idx, j, MessageUtil::parseLength(response));
+                        test_process_idx, j, MessageUtil::parseLength2(response));
                 };
                 rdma_client->PostRequest((void *)send_buf, length, callback); 
             }
