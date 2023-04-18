@@ -559,9 +559,9 @@ protected:
 
       // 更新zsend中的一些元信息，也就是推进zsend->front
       (void) pthread_spin_lock(zsend->spinlock);
-      for (int k = 0; k < send->segment_nums[rear]; ++k) {
+      for (int k = 0; k < zsend->segment_nums[rear]; ++k) {
         uint64_t p = (rear + k) % (this->slot_num + 1);
-        send->states[p] = SlotState::SLOT_IDLE;
+        zsend->states[p] = SlotState::SLOT_IDLE;
       }
       if (rear == zsend->front) {
         uint64_t p = rear;
