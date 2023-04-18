@@ -1247,6 +1247,9 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         send->notsent_front = send->notsent_rear;
       }
+      // zhouhuahui test
+      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): over to post send. send->"
+              "notsent_front: %lu, send->notsend_rear: %lu", send->notsent_front, send->notsent_rear);
       (void) pthread_spin_unlock(send->spinlock);
 
       return true;
