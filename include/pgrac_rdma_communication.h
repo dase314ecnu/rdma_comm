@@ -572,9 +572,6 @@ protected:
         }
         zsend->front = p;
       }
-      // zhouhuahui test
-      LOG_DEBUG("zhouhuahui test: waitForResponse(): update zsend: msg start slot idx: %lu, zsend->front: "
-              "%lu, zsend->rear: %lu", rear, zsend->front, zsend->rear);
       (void) pthread_spin_unlock(zsend->spinlock);
     }
     
@@ -838,9 +835,6 @@ void RdmaServer<T>::listenThreadFun() {
     pthread_spin_lock(&(this->locks[idx]));
     this->rdma_queue_pairs[idx] = qp;
     pthread_spin_unlock(&(this->locks[idx]));
-
-    LOG_DEBUG("RdmaServer listen thread, success to make qp ready to send, receive thread of %d "
-            "will handle the qp connection", idx);
   }
   
   close(sock);
@@ -977,9 +971,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           slot_idx++;
         }
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-        send_cnt++;
-        LOG_DEBUG("RdmaServer receive thread of %u, have sent %lu responses", 
-          node_idx, send_cnt);
+        // ......
       }
     }
   }

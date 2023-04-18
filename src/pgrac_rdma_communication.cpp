@@ -906,8 +906,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         (void) pthread_spin_unlock(send->spinlock);
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-        send_cnt++;
-        LOG_DEBUG("CommonRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
+        // ......
       }
     }
   }
@@ -1117,8 +1116,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
           // 接收到回复
           uint64_t slot_idx = wc.imm_data;
-          // zhouhuahui test
-          LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): slot: %lu get response", slot_idx);
           if (qp->PostReceive() != 0) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to post receive "
                     "after receiving a recv wc", node_idx);
@@ -1146,15 +1143,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
               }
               send->front = p;
             }
-            // zhouhuahui test
-            LOG_DEBUG("zhouhuahui test: sendThreadFun(): update zsend: msg start slot idx: %lu, zsend->front: "
-                    "%lu, zsend->rear: %lu", slot_idx, send->front, send->rear);
           }
           (void) pthread_spin_unlock(send->spinlock);
 
         } else {
-          send_cnt++;
-          LOG_DEBUG("SharedRdmaClient success to post %lu sends in send node of %u", send_cnt, node_idx);
+          // ......
         }
       }
 
@@ -1243,9 +1236,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
             return false;
           }
-          // zhouhuahui test
-          LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): post a send: slot_idx: %lu"
-                  ", end_idx: %lu", slot_idx, slot_idx + real_msg_num - 1);
           slot_idx = (slot_idx + msg_num) % (this->slot_num + 1);
         }
         send->notsent_front = send->notsent_rear;
@@ -1401,10 +1391,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       while (zsend->states[zsend->notsent_front] == SlotState::SLOT_IDLE) {
         zsend->notsent_front = (zsend->notsent_front + 1) % (this->slot_num + 1);
       }
-
-      // zhouhuahui test
-      LOG_DEBUG("zhouhuahui test: rrLoadBalanceStrategy(): update zsend: msg start slot idx: %lu, zsend->front: "
-              "%lu, zsend->rear: %lu", start_rear, zsend->front, zsend->rear);
       
       (void) pthread_spin_unlock(zsend->spinlock);
       
