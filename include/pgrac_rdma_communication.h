@@ -1113,7 +1113,9 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
     int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
     src_buf += sizeof(SlotMeta);
     // zhouhuahui test
-    LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d, last_head: %u, slot_idx: %u, node_idx: %u, k: %u", len, last_head, slot_idx, node_idx, k);
+    if (len < 8) {
+      LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d, last_head: %u, slot_idx: %u, node_idx: %u, k: %u", len, last_head, slot_idx, node_idx, k);
+    }
     memmove(dest_buf, src_buf, len);
     dest_buf += len;
     if (k == slot_idx) {
