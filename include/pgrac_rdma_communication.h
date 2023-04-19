@@ -967,7 +967,8 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
             // zhouhuhaui test
             LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_LAST: slot idx: %u", node_idx, slot_idx);
-            this->mergeMultipleSegments(last_head, slot_idx, node_idx);
+            // zhouhuahui test
+            // this->mergeMultipleSegments(last_head, slot_idx, node_idx);
             char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                     last_head * this->slot_size;
             buf += sizeof(SlotMeta);
