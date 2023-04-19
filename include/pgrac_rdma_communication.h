@@ -953,14 +953,20 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
                   slot_idx * this->slot_size;
           SlotMeta *meta = (SlotMeta *)buf;
           if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL) {
+            // zhouhuhaui test
+            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_NORMAL: slot idx: %u", node_idx, slot_idx);
             buf = buf + sizeof(SlotMeta);
             // 调用工作线程池的接口，将请求发给工作线程池进行处理
             this->worker_threadpool->Start(buf, node_idx, slot_idx);
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST) {
+            // zhouhuhaui test
+            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_FIRST: slot idx: %u", node_idx, slot_idx);
             last_head = slot_idx;
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_MORE) {
             // ....
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
+            // zhouhuhaui test
+            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_LAST: slot idx: %u", node_idx, slot_idx);
             this->mergeMultipleSegments(last_head, slot_idx, node_idx);
             char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                     last_head * this->slot_size;
