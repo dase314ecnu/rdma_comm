@@ -1199,10 +1199,12 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         /* 实现组发送机制 */
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
-          if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
-            slot_idx = (slot_idx + 1) % (this->slot_num + 1);
-            continue;
-          }
+          // zhouhuahui test
+          // if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
+          //   slot_idx = (slot_idx + 1) % (this->slot_num + 1);
+          //   continue;
+          // }
+
           uint32_t msg_num = 1;
           uint32_t real_msg_num = 1;
           // 组合发送的消息不能超过GROUP_POST_SEND_MAX_MSG_NUM
@@ -1216,9 +1218,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
            * 所以可以不用发这部分slot，这就是msg_num和real_msg_num的区别。
            */
           real_msg_num = msg_num;
-          while (send->states[slot_idx + real_msg_num - 1] == SlotState::SLOT_IDLE) {
-            real_msg_num--;
-          }
+          // zhouhuahui test
+          // while (send->states[slot_idx + real_msg_num - 1] == SlotState::SLOT_IDLE) {
+          //   real_msg_num--;
+          // }
 
           char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                   + slot_idx * this->slot_size;
