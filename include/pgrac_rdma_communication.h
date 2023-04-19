@@ -1113,10 +1113,7 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
     int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
     src_buf += sizeof(SlotMeta);
     // zhouhuahui test
-    LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d", len);
-    if ((uintptr_t)dest_buf > (uintptr_t)((char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + (this->slot_num + 1) * this->slot_size)) {
-      LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): segment error: dest_buf is %lu, boundary is %lu", (uintptr_t)dest_buf,(uintptr_t)((char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + (this->slot_num + 1) * this->slot_size));
-    }
+    LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d, last_head: %u, slot_idx: %u, node_idx: %u, k: %u", len, last_head, slot_idx, node_idx, k);
     memmove(dest_buf, src_buf, len);
     dest_buf += len;
     if (k == slot_idx) {
