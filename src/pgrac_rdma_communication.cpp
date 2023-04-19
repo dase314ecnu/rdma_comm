@@ -1391,6 +1391,9 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       while (zsend->states[zsend->notsent_front] == SlotState::SLOT_IDLE) {
         zsend->notsent_front = (zsend->notsent_front + 1) % (this->slot_num + 1);
       }
+
+      // zhouhuahui test
+      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::rrLoadBalanceStrategy(): a complete msg: start_rear: %lu, rear2: %lu, node_idx: %d", start_rear, rear2, i);
       
       (void) pthread_spin_unlock(zsend->spinlock);
       
