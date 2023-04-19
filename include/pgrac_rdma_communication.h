@@ -563,6 +563,11 @@ protected:
         uint64_t p = (rear + k) % (this->slot_num + 1);
         zsend->states[p] = SlotState::SLOT_IDLE;
       }
+      // zhouhuahui test
+      if (!(rear >= zsend->front && rear < zsend->rear)) {
+        LOG_DEBUG("zhouhuahui test: waitForResponse(): something wrong. slot of %lu recved response, but zsend->front is %lu, zsend->rear is %lu", rear, zsend->front, zsend->rear);
+      }
+
       if (rear == zsend->front) {
         uint64_t p = rear;
         while (p != zsend->notsent_front
