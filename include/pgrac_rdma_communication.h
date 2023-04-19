@@ -967,8 +967,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
             // zhouhuhaui test
             LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_LAST: slot idx: %u", node_idx, slot_idx);
-            // zhouhuahui test
-            // this->mergeMultipleSegments(last_head, slot_idx, node_idx);
+            this->mergeMultipleSegments(last_head, slot_idx, node_idx);
             char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                     last_head * this->slot_size;
             buf += sizeof(SlotMeta);
@@ -1113,6 +1112,11 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
           k * this->slot_size;
     int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
     src_buf += sizeof(SlotMeta);
+    // zhouhuahui test
+    LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d", len);
+    if ((uintptr_t)dest_buf > (uintptr_t)((char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + (this->slot_num + 1) * this->slot_size)) {
+      LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): segment error: dest_buf is %lu, boundary is %lu", (uintptr_t)dest_buf,(uintptr_t)((char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() + (this->slot_num + 1) * this->slot_size));
+    }
     memmove(dest_buf, src_buf, len);
     dest_buf += len;
     if (k == slot_idx) {
