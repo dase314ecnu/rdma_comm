@@ -1231,6 +1231,10 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)slot_idx);
           SET_MSG_NUM_TO_IMM_DATA(imm_data, real_msg_num);
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
+
+          // zhouhuahui test
+          LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): node: %u, send slots: start_slot_idx: %lu, end_slot_idx: %lu", node_idx, slot_idx, slot_idx + real_msg_num - 1);
+          
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
             LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to Post send, ret is %d, errno is %d", node_idx, rc, errno);
