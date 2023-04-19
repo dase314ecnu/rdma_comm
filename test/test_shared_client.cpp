@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <sys/wait.h>
+#include <random>
 
 #include "test/test_shared_client.h"
 #include "test/test_worker_threadpool.h"
@@ -84,16 +85,20 @@ void TestSharedClientClass::runClient() {
     auto func = [&] (uint32_t test_process_idx) {
         char content[100000];
         int *length = (int *)content;
-        *length = 200 * this->_slot_size;
-        char *buf = content + sizeof(int);
-        for (int i = 0; i < 200 * this->_slot_size - 1; ++i) {
-            buf[i] = 'a' + i % 20;
-        }
-        buf[200 * this->_slot_size - 1] = '\0';
-        *length += sizeof(int);
+        std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
+        std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
             LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
+            
+            // 产生随机消息
+            *length = uniform(rand_eng);
+            char *buf = content + sizeof(int);
+            for (int i = 0; i < *length - 1; ++i) {
+                buf[i] = 'a' + i % 20;
+            }
+            buf[*length - 1] = '\0';
+            *length += sizeof(int);
 
             if (j % 10 == 9) {
                 int ret;
