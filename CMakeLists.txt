@@ -4,6 +4,7 @@ include_directories(.)
 include_directories(include)
 
 set(CMAKE_CXX_COMPILER "/bin/g++")
+set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_CXX_FLAGS "-std=c++17 -pthread -libverbs -g -O0")
 set(DEBUG false CACHE BOOL "debug")
 
