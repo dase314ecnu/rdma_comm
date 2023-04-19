@@ -1115,9 +1115,7 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
   for (uint32_t k = last_head + 1; ; k = (k + 1) % (this->slot_num + 1)) {
     char *src_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
           k * this->slot_size;
-    // zhouhuahui test
-    // int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
-    int len = ((SlotMeta *)(src_buf))->size - sizeof(SlotMeta);
+    int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
 
     src_buf += sizeof(SlotMeta);
     // zhouhuahui test
