@@ -1234,6 +1234,13 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
 
           // zhouhuahui test
           LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): node: %u, send slots: start_slot_idx: %lu, end_slot_idx: %lu, real_msg_num: %u, msg_num: %u", node_idx, slot_idx, slot_idx + real_msg_num - 1, real_msg_num, msg_num);
+          if (real_msg_num != msg_num) {
+            uint64_t k = slot_idx;
+            for (; k != this->slot_num + 1; ++k) {
+              printf("send->states[%lu]=%d, ", k, send->states[k]);
+            }
+            printf("\n");
+          }
 
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
