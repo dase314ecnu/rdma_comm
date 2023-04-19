@@ -85,7 +85,8 @@ void TestSharedClientClass::runClient() {
     auto func = [&] (uint32_t test_process_idx) {
         char content[100000];
         int *length = (int *)content;
-        std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
+        // std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
+        std::uniform_int_distribution<int> uniform(10, 50);
         std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
@@ -163,7 +164,7 @@ int main() {
         // slot_num: 500
         // num_test_thread: 100  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 100 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 5, 64, 500, 100, 1000);
+        test.TestSimpleServer2(IsClient{}, 5, 64, 500, 30, 1000);
     }
 }
 
