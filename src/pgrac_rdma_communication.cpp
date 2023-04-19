@@ -1488,6 +1488,10 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
         content += (this->slot_size - sizeof(SlotMeta));
         meta->size = this->slot_size;
       }
+      // zhouhuahui test
+      if (meta->size < 8) {
+        LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): start_rear: %lu, rear2: %lu, slot_idx: %lu, node_idx: %lu", *start_rear, *rear2, start_slot_idx, node_idx);
+      }
       if (first) {
         if (left_size == 0) {
           meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL;
