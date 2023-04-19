@@ -1237,7 +1237,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           if (real_msg_num != msg_num) {
             uint64_t k = slot_idx;
             for (; k != this->slot_num + 1; ++k) {
-              printf("send->states[%lu]=%d, ", k, send->states[k]);
+              printf("send->states[%u.%lu]=%d, ", node_idx, k, send->states[k]);
             }
             printf("\n");
           }
