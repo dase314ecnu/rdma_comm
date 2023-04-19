@@ -85,8 +85,7 @@ void TestSharedClientClass::runClient() {
     auto func = [&] (uint32_t test_process_idx) {
         char content[100000];
         int *length = (int *)content;
-        // std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
-        std::uniform_int_distribution<int> uniform(10, 50);
+        std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
         std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
