@@ -736,6 +736,9 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
       scratch += sizeof(SlotState) * (this->slot_num + 1) + sizeof(pthread_spinlock_t);
       scratch += sizeof(bool) * (this->slot_num + 1);
       scratch += sizeof(int) * (this->slot_num + 1);
+      
+      // zhouhuahui test
+      scratch += sizeof(double);
     } catch (...) {
       throw std::bad_exception();
     }
@@ -1372,8 +1375,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       LOG_DEBUG("zhouhuahui test: SharedRdmaClient::rrLoadBalanceStrategy(): a complete msg: start_rear: %lu, rear2: %lu, node_idx: %d", start_rear, rear2, i);
       
       (void) pthread_spin_unlock(zsend->spinlock);
-      // zhouhuahui test
-      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): node_idx: %d, pthread_spin_unlock(zsend->spinlock) success. spinlock is %d", i, *(zsend->spinlock));
       
       rc = send(this->listen_fd[i * 2], &c, 1, 0); 
       if (rc <= 0) {
@@ -1414,11 +1415,7 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
   int segment_num = this->getNeededSegmentNum(size);
   uint64_t free_seg = 0;
 
-  // zhouhuahui test
-  LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): node_idx: %lu, before pthread_spin_lock(zsend->spinlock). spinlock is %d", node_idx, *(zsend->spinlock));
   (void) pthread_spin_lock(zsend->spinlock);
-  // zhouhuahui test
-  LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): node_idx: %lu, pthread_spin_lock(zsend->spinlock) success. spinlock is %d", node_idx, *(zsend->spinlock));
 
   /** 
    * 若rear到end的空间不足以存放消息，则需要看front和rear是否相等，若相等，
@@ -1467,10 +1464,6 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
         left_size -= (this->slot_size - sizeof(SlotMeta));
         content += (this->slot_size - sizeof(SlotMeta));
         meta->size = this->slot_size;
-      }
-      // zhouhuahui test
-      if (meta->size < 8) {
-        LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): start_rear: %lu, rear2: %lu, slot_idx: %lu, node_idx: %lu", *start_rear, *rear2, start_slot_idx, node_idx);
       }
       if (first) {
         if (left_size == 0) {

@@ -130,8 +130,8 @@ void TestWorkerThreadpool::workerThreadFun() {
             int length = msg.parseLength(buf);
             buf += sizeof(int);
             std::string content = msg.parseContent(buf);
-            LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d, content is: %s",
-                    length, content.c_str());
+            LOG_DEBUG("TestWorkerThreadpool worker thread, received msg length: %d",
+                    length);
 
             // 回复，指定响应的长度是20
             char res_buf[100];
