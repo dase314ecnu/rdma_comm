@@ -1122,13 +1122,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             return false;
           }
           
-          if (send->nowait[slot_idx] == false) {
-            if (!USE_BUSY_POLLING) {
-              (void) sem_post(&(awake->sems[slot_idx]));
-            } else {
-              awake->done[slot_idx] = true;
-            }
-          }
           (void) pthread_spin_lock(send->spinlock);
           // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
           if (send->nowait[slot_idx] == true) {
@@ -1145,6 +1138,14 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             }
           }
           (void) pthread_spin_unlock(send->spinlock);
+
+          if (send->nowait[slot_idx] == false) {
+            if (!USE_BUSY_POLLING) {
+              (void) sem_post(&(awake->sems[slot_idx]));
+            } else {
+              awake->done[slot_idx] = true;
+            }
+          }
 
         } else {
           // ......
