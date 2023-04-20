@@ -90,8 +90,6 @@ void TestSharedClientClass::runClient() {
         std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
-            LOG_DEBUG("test_process of %u will send %dth(from 0) msg", test_process_idx, j);
-            
             // 产生随机消息
             *length = uniform(rand_eng);
             char *buf = content + sizeof(int);
