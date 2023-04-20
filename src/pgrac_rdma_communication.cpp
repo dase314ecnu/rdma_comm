@@ -1528,14 +1528,8 @@ uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_
 {
   uint64_t size = 0;
   size += sizeof(SharedRdmaClient);
-  // size += sizeof(ZSend) * _node_num;
-  // size += (sizeof(SlotState) * (_slot_num + 1) + sizeof(pthread_spinlock_t) + sizeof(bool) * (_slot_num + 1)) 
-  //         * _node_num;
   size += ZSend::GetSharedObjSize(_slot_num);
 
-  // size += sizeof(ZAwake) * _node_num;
-  // size += (sizeof(sem_t) * (_slot_num + 1)) * _node_num;
-  // size += (sizeof(volatile bool) * (_slot_num + 1)) * _node_num;
   size += ZAwake::GetSharedObjSize(_slot_num);
 
   size += sizeof(RdmaQueuePair *) * _node_num;
