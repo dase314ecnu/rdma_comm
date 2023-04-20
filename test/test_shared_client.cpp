@@ -86,7 +86,7 @@ void TestSharedClientClass::runClient() {
         char content[1000000];
         int *length = (int *)content;
         // std::uniform_int_distribution<int> uniform(5, 50);
-        std::uniform_int_distribution<int> uniform(100 *this-> _slot_size, 300 *this-> _slot_size);
+        std::uniform_int_distribution<int> uniform(5, 300 *this-> _slot_size);
         std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
@@ -157,14 +157,14 @@ int main() {
     if (IS_SERVER) {
         // 由于是测试，所以我写的工作线程很简单，所有工作线程都从一个队列中取数据
         // 因此如果将工作线程的数量设置的太大，则会大大增加竞争，性能非常差
-        test.TestSimpleServer2(IsServer{}, 3, 50, 10, 1024, 500); 
+        test.TestSimpleServer2(IsServer{}, 3, 50, 9, 1024, 500); 
     } else {
         // node_num: 5
         // slot_size: 64
         // slot_num: 500
         // num_test_thread: 100  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 100 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 10, 1024, 500, 30, 1000);
+        test.TestSimpleServer2(IsClient{}, 9, 1024, 500, 30, 1000);
     }
 }
 
