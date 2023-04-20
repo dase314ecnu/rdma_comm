@@ -1372,6 +1372,8 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       LOG_DEBUG("zhouhuahui test: SharedRdmaClient::rrLoadBalanceStrategy(): a complete msg: start_rear: %lu, rear2: %lu, node_idx: %d", start_rear, rear2, i);
       
       (void) pthread_spin_unlock(zsend->spinlock);
+      // zhouhuahui test
+      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): pthread_spin_unlock(zsend->spinlock) success. spinlock is %d", *(zsend->spinlock));
       
       rc = send(this->listen_fd[i * 2], &c, 1, 0); 
       if (rc <= 0) {
@@ -1412,6 +1414,9 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
   int segment_num = this->getNeededSegmentNum(size);
   uint64_t free_seg = 0;
   (void) pthread_spin_lock(zsend->spinlock);
+  // zhouhuahui test
+  LOG_DEBUG("zhouhuahui test: SharedRdmaClient::checkNodeCanSend(): pthread_spin_lock(zsend->spinlock) success. spinlock is %d", *(zsend->spinlock));
+
   /** 
    * 若rear到end的空间不足以存放消息，则需要看front和rear是否相等，若相等，
    * 则可以将front, rear等都设置为0。
