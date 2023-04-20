@@ -521,7 +521,7 @@ protected:
 
     /** 
      * 由于分片机制，检查node_idx号node是否可以用于发送数据。若slot有100个，是0 - 99，
-     * 若rear是9，segment_num是2，则需要分配0, 1号slot来发送数据，而不是99, 0号slot。
+     * 若rear是99，segment_num是2，则需要等到rear到end的空间足够存放数据为止，而不是用99, 0号slot来发送。
      * 若可以的话，则将send_content中的内容填充到对应的slot中。
      * 注意：若成功返回，则调用者需要负责释放node_idx号的zsend的spinlock。
      * 
@@ -562,10 +562,6 @@ protected:
       for (int k = 0; k < zsend->segment_nums[rear]; ++k) {
         uint64_t p = (rear + k) % (this->slot_num + 1);
         zsend->states[p] = SlotState::SLOT_IDLE;
-      }
-      // zhouhuahui test
-      if (!(rear >= zsend->front && rear < zsend->rear)) {
-        LOG_DEBUG("zhouhuahui test: waitForResponse(): something wrong. slot of %lu recved response, but zsend->front is %lu, zsend->rear is %lu", rear, zsend->front, zsend->rear);
       }
 
       if (rear == zsend->front) {

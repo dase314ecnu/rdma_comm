@@ -1177,12 +1177,6 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
       if (!USE_GROUP_POST_SEND) {
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
-          // 如果是 SlotState::SLOT_IDLE，或者slot_segment_type是SLOT_SEGMENT_TYPE_NODATA
-          // 或者packet length是sizeof(SlotMeta)，则说明这个slot不用发
-          if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
-            slot_idx = (slot_idx + 1) % (this->slot_num + 1);
-            continue;
-          }
           char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                 + slot_idx * this->slot_size;
           int size = MessageUtil::parsePacketLength(buf);
@@ -1199,51 +1193,25 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
         /* 实现组发送机制 */
         uint64_t slot_idx = send->notsent_front;
         while (slot_idx != send->notsent_rear) {
-          // zhouhuahui test
-          // if (send->states[slot_idx] == SlotState::SLOT_IDLE) {
-          //   slot_idx = (slot_idx + 1) % (this->slot_num + 1);
-          //   continue;
-          // }
-
           uint32_t msg_num = 1;
-          uint32_t real_msg_num = 1;
           // 组合发送的消息不能超过GROUP_POST_SEND_MAX_MSG_NUM
           if (send->notsent_rear > slot_idx) {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(send->notsent_rear - slot_idx));
           } else {
             msg_num = std::min((int)GROUP_POST_SEND_MAX_MSG_NUM, (int)(this->slot_num + 1 - slot_idx));
           }
-          /** 
-           * 由于slot_idx到slot_idx + msg_num - 1号的slot可能是有空slot的（由于分片机制），
-           * 所以可以不用发这部分slot，这就是msg_num和real_msg_num的区别。
-           */
-          real_msg_num = msg_num;
-          // zhouhuahui test
-          // while (send->states[slot_idx + real_msg_num - 1] == SlotState::SLOT_IDLE) {
-          //   real_msg_num--;
-          // }
 
           char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
                   + slot_idx * this->slot_size;
           // size是所有消息个数乘以slot_size的结果。
-          int size = this->slot_size * real_msg_num;
-          if (real_msg_num == 1) {
+          int size = this->slot_size * msg_num;
+          if (msg_num == 1) {
             size = MessageUtil::parsePacketLength(buf);
           }
           uint32_t imm_data = 0;
           SET_SLOT_IDX_TO_IMM_DATA(imm_data, (uint32_t)slot_idx);
-          SET_MSG_NUM_TO_IMM_DATA(imm_data, real_msg_num);
+          SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num);
           rc = this->rdma_queue_pairs[node_idx]->PostSend(imm_data, slot_idx, size);
-
-          // zhouhuahui test
-          LOG_DEBUG("zhouhuahui test: SharedRdmaClient::sendThreadFun(): node: %u, send slots: start_slot_idx: %lu, end_slot_idx: %lu, real_msg_num: %u, msg_num: %u", node_idx, slot_idx, slot_idx + real_msg_num - 1, real_msg_num, msg_num);
-          if (real_msg_num != msg_num) {
-            uint64_t k = slot_idx;
-            for (; k != this->slot_num + 1; ++k) {
-              printf("send->states[%u.%lu]=%d, ", node_idx, k, send->states[k]);
-            }
-            printf("\n");
-          }
 
           if (rc != 0) {
             (void) pthread_spin_unlock(send->spinlock);
@@ -1386,9 +1354,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       }
 
       rear                = zsend->rear;
-      for (uint64_t k = rear; k != start_rear; k = (k + 1) % (this->slot_num + 1)) {
-        zsend->states[k] = SlotState::SLOT_IDLE;
-      }
       for (uint64_t k = start_rear; k != rear2; k = (k + 1) % (this->slot_num + 1)) {
         zsend->states[k] = SlotState::SLOT_INPROGRESS;
         zsend->nowait[k] = nowait;
@@ -1396,15 +1361,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
       zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
-      /** 
-       * 如果zsend->front号slot的状态是SlotState::SLOT_IDLE，则需要向前移动。
-       */
-      while (zsend->states[zsend->front] == SlotState::SLOT_IDLE) {
-        zsend->front = (zsend->front + 1) % (this->slot_num + 1);
-      }
-      while (zsend->states[zsend->notsent_front] == SlotState::SLOT_IDLE) {
-        zsend->notsent_front = (zsend->notsent_front + 1) % (this->slot_num + 1);
-      }
 
       // zhouhuahui test
       LOG_DEBUG("zhouhuahui test: SharedRdmaClient::rrLoadBalanceStrategy(): a complete msg: start_rear: %lu, rear2: %lu, node_idx: %d", start_rear, rear2, i);
@@ -1448,38 +1404,34 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
   ZSend  *zsend = &this->sends[node_idx];
   ZAwake *zawake = &this->awakes[node_idx];
   int segment_num = this->getNeededSegmentNum(size);
-  uint64_t needed_seg = 0;
   uint64_t free_seg = 0;
   (void) pthread_spin_lock(zsend->spinlock);
-  if (this->slot_num + 1 - zsend->rear >= segment_num) {
-    needed_seg = segment_num;
-  } else {
-    needed_seg = (this->slot_num + 1 - zsend->rear) + segment_num;
-  }
+  /** 
+   * 若rear到end的空间不足以存放消息，则需要看front和rear是否相等，若相等，
+   * 则可以将front, rear等都设置为0。
+   */
+  if (this->slot_num + 1 - zsend->rear < segment_num) {
+    if (zsend->front == zsend->rear) {
+      zsend->front = zsend->rear = zsend->notsent_front = zsend->notsent_rear = 0;
+    } else {
+      (void) pthread_spin_unlock(zsend->spinlock);
+      return false;
+    }
+  } 
+  
+  /* 到此为止，已经确保rear到end的空间是足够存放消息的。现在看可用空间是否足够 */
   if (zsend->front <= zsend->rear) {
     free_seg = (this->slot_num + 1 - zsend->rear) + zsend->front;
   } else {
     free_seg = zsend->front - zsend->rear;
   }
 
-  if (needed_seg < free_seg) {
+  if (segment_num < free_seg) {
     if (rear2) {
-      *rear2 = (zsend->rear + needed_seg) % (this->slot_num + 1);
+      *rear2 = (zsend->rear + segment_num) % (this->slot_num + 1);
     }
     // 将send_content中的数据填充到slot中
-    uint64_t start_slot_idx = 0;
-    if (this->slot_num + 1 - zsend->rear >= segment_num) {
-      start_slot_idx = zsend->rear;
-    } else {
-      start_slot_idx = 0;
-      for (uint64_t k = zsend->rear; k != this->slot_num + 1; ++k) {
-        char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
-              + k * this->slot_size;
-        SlotMeta *meta = (SlotMeta *)buf;
-        meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_NODATA;
-        meta->size = sizeof(SlotMeta);
-      }
-    }
+    uint64_t start_slot_idx = zsend->rear;
     if (start_rear) {
       *start_rear = start_slot_idx;
     }
