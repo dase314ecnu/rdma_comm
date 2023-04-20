@@ -138,6 +138,7 @@ typedef struct ZSend {
       size += sizeof(ZSend);
       size += sizeof(SlotState) * (slot_num + 1) + sizeof(pthread_spinlock_t) + sizeof(bool) * (slot_num + 1)
               + sizeof(int) * (slot_num + 1);
+      size += sizeof(double);
       return size;
     }
 } ZSend;
@@ -954,20 +955,14 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
                   slot_idx * this->slot_size;
           SlotMeta *meta = (SlotMeta *)buf;
           if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL) {
-            // zhouhuhaui test
-            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_NORMAL: slot idx: %u", node_idx, slot_idx);
             buf = buf + sizeof(SlotMeta);
             // 调用工作线程池的接口，将请求发给工作线程池进行处理
             this->worker_threadpool->Start(buf, node_idx, slot_idx);
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST) {
-            // zhouhuhaui test
-            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_FIRST: slot idx: %u", node_idx, slot_idx);
             last_head = slot_idx;
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_MORE) {
             // ....
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
-            // zhouhuhaui test
-            LOG_DEBUG("zhouhuahui test: RdmaServer<T>::receiveThreadFun() %u: SLOT_SEGMENT_TYPE_LAST: slot idx: %u", node_idx, slot_idx);
             this->mergeMultipleSegments(last_head, slot_idx, node_idx);
             char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                     last_head * this->slot_size;
@@ -1114,10 +1109,6 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
     int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
 
     src_buf += sizeof(SlotMeta);
-    // zhouhuahui test
-    if (len < 8) {
-      LOG_DEBUG("zhouhuahui test: RdmaServer<T>::mergeMultipleSegments(): message len is %d, last_head: %u, slot_idx: %u, node_idx: %u, k: %u", len, last_head, slot_idx, node_idx, k);
-    }
     memmove(dest_buf, src_buf, len);
     dest_buf += len;
     if (k == slot_idx) {

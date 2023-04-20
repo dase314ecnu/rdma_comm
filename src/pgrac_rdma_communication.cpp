@@ -736,8 +736,7 @@ RdmaClient::RdmaClient(uint64_t _slot_size, uint64_t _slot_num, std::string _rem
       scratch += sizeof(SlotState) * (this->slot_num + 1) + sizeof(pthread_spinlock_t);
       scratch += sizeof(bool) * (this->slot_num + 1);
       scratch += sizeof(int) * (this->slot_num + 1);
-      
-      // zhouhuahui test
+
       scratch += sizeof(double);
     } catch (...) {
       throw std::bad_exception();
@@ -1370,9 +1369,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       zsend->rear          = rear2;
       zsend->notsent_rear  = rear2;
       zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
-
-      // zhouhuahui test
-      LOG_DEBUG("zhouhuahui test: SharedRdmaClient::rrLoadBalanceStrategy(): a complete msg: start_rear: %lu, rear2: %lu, node_idx: %d", start_rear, rear2, i);
       
       (void) pthread_spin_unlock(zsend->spinlock);
       
