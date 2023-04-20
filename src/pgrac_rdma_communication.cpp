@@ -885,16 +885,11 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           return;
         }
         
-        if (send->nowait[slot_idx] == false) {
-          if (!USE_BUSY_POLLING) {
-            (void) sem_post(&(awake->sems[slot_idx]));
-          } else {
-            awake->done[slot_idx] = true;
-          }
-        }
+        bool nowait;
         (void) pthread_spin_lock(send->spinlock);
+        nowait = send->nowait[slot_idx];
         // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
-        if (send->nowait[slot_idx] == true) {
+        if (nowait == true) {
           send->states[slot_idx] = SlotState::SLOT_IDLE;
           if (slot_idx == send->front) {
             uint64_t p = slot_idx;
@@ -905,6 +900,14 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
           }
         }
         (void) pthread_spin_unlock(send->spinlock);
+        if (nowait == false) {
+          if (!USE_BUSY_POLLING) {
+            (void) sem_post(&(awake->sems[slot_idx]));
+          } else {
+            awake->done[slot_idx] = true;
+          }
+        }
+
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         // ......
       }
@@ -1122,9 +1125,11 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
             return false;
           }
           
+          bool nowait;
           (void) pthread_spin_lock(send->spinlock);
+          nowait = send->nowait[slot_idx];
           // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
-          if (send->nowait[slot_idx] == true) {
+          if (nowait == true) {
             for (int k = 0; k < send->segment_nums[slot_idx]; ++k) {
               uint64_t p = (slot_idx + k) % (this->slot_num + 1);
               send->states[p] = SlotState::SLOT_IDLE;
@@ -1139,7 +1144,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           }
           (void) pthread_spin_unlock(send->spinlock);
 
-          if (send->nowait[slot_idx] == false) {
+          if (nowait == false) {
             if (!USE_BUSY_POLLING) {
               (void) sem_post(&(awake->sems[slot_idx]));
             } else {
