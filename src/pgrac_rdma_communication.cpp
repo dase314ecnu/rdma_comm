@@ -1322,7 +1322,7 @@ void SharedRdmaClient::Stop() {
   this->send_threads = nullptr;
 }
 
-void SharedRdmaClient::Destroy() { 
+void SharedRdmaClient::Destroy() {  
   LOG_DEBUG("Start to destroy SharedRdmaClient\n");
 
   this->Stop();
