@@ -83,7 +83,7 @@ void TestSharedClientClass::runClient() {
     // };
 
     auto func = [&] (uint32_t test_process_idx) {
-        char content[100000];
+        char content[1000000];
         int *length = (int *)content;
         // std::uniform_int_distribution<int> uniform(5, 50);
         std::uniform_int_distribution<int> uniform(100 *this-> _slot_size, 300 *this-> _slot_size);
