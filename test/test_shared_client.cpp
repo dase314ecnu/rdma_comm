@@ -85,7 +85,8 @@ void TestSharedClientClass::runClient() {
     auto func = [&] (uint32_t test_process_idx) {
         char content[100000];
         int *length = (int *)content;
-        std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
+        std::uniform_int_distribution<int> uniform(5, 50);
+        // std::uniform_int_distribution<int> uniform(2, 300 *this-> _slot_size);
         std::default_random_engine rand_eng; 
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
@@ -101,18 +102,16 @@ void TestSharedClientClass::runClient() {
             *length += sizeof(int);
 
             if (j % 10 == 9) {
-                // zhouhuahui test
-                // int ret;
-                // rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
+                int ret;
+                rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
             } else if (j % 10 == 8) {
-                // zhouhuahui test
-                // void *response = nullptr;
-                // int rc = 0;
-                // auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
-                // wait(&response);
-                // LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                //         test_process_idx, j, MessageUtil::parseLength2(response));
-                // free(response);
+                void *response = nullptr;
+                int rc = 0;
+                auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
+                wait(&response);
+                LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                        test_process_idx, j, MessageUtil::parseLength2(response));
+                free(response);
             } else {
                 auto callback = [&](void *response) {
                     LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 

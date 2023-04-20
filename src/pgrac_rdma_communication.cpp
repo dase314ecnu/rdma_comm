@@ -1520,7 +1520,7 @@ bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, u
           meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_MORE;
         }
       }
-      start_slot_idx = (start_slot_idx + 1) % (this->slot_num + 1);
+      start_slot_idx = start_slot_idx + 1;
     }
     return true;
   } else {
