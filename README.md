@@ -123,6 +123,16 @@ auto callback = std::bind(yourfunc, your args);
 rdma_client->PostRequest((void *)send_buf, length, callback); 
 ``` 
 
+## nowait机制
+这个机制是基于异步发送机制开发的，如果一个异步发送操作不需要使用响应结果，它就无需等待。因此它只需要发送一个异步请求，然后直接不用再管这个请求的结果。这个feature适用于pg的异步提交机制，以提高性能。
+```cpp
+int ret;
+rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
+```
+
+## 消息分片机制
+由于这个框架设计之初是假设每个消息都有固定的长度，但是有些场景下，消息长度并不是固定的。因此就实现了消息分片机制，将一个长消息分成多个slot来发送，接收端负责识别出消息分片，并在inplace地将消息分片组合成一个完整的消息，最后将指针返回给上层。因此，上层可以传递任意长度的消息到底层框架，也可以收到任意长度的消息，并不用关心底层的消息分片机制。
+
 
 # 问题
 ## fork()引起的rdma资源出错
@@ -132,6 +142,15 @@ rdma_client->PostRequest((void *)send_buf, length, callback);
 
 ## ibv_post_send()返回ENOMEM错误码
 由于一个bug，客户端在死循环内发送了大量的组提交消息，服务端于是不断处理大量的消息，不断发送大量的响应，导致消息个数远远超过qp的容量，导致了客户端的ibv_post_send()返回了ENOMEM错误码。
+
+## 共享内存被错误覆盖的问题
+见这个commit: https://gitee.com/zhouhuahui/pgrac_shared-cache-service/commit/818a30f1e9b4beead7cabd65cab24e4ed96c50a7。send thread和backend这两个并发的线程都有可能更新状态位，如果send thread在收到响应之后先唤醒backend线程，那么就有可能发生这样的情况：
+1. backend进程被唤醒
+2. 对zsend->spinlock加锁，更新zsend中的front状态位，states状态位等，解锁
+3. backend2发现zsend->front更新，于是在这个发送器上填充数据，并更新zsend的nowait, states状态位
+4. send thread发现了不一致的nowait状态，导致它执行了不该执行的代码：再次更新zsend的states状态位。states状态被污染
+5. send thread再次循环时，由于zsend的states状态错误，导致某些slot的数据（属于backend2的）应该发送却没有发送
+6. 服务器接收到了slot head和slot tail，但是由于中间的某些slot并没有发送过来，因此服务器读到的数据是未赋值的数据，用这个错误数据进行后续操作导致了错误（比如，访问到了错误的length字段，进而访问了错误的内存）
 
 ## 其他问题
 1. =和==符号弄错
