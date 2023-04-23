@@ -1091,7 +1091,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
 
   while (!this->stop) {
     epoll_event event;
-    if (!USE_BUSY_POLLING) {
+    if (!USE_RDMA_CLIENT_BUSY_POLLING) {
       rc = waitset->waitSetWait(&event);
       if (rc < 0 && errno != EINTR) {
         LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to waitsetwait", node_idx);
