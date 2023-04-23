@@ -86,25 +86,20 @@ void TestSharedClientMetricsClass::runClient() {
             // 产生随机消息
             *length = uniform(rand_eng) + sizeof(int);
             rdma_client->PostRequest((void *)content, *length, &response); 
-            // (*query_num).fetch_add(1);
-            // if ((j + 1) % 10 == 0) {
-            //     after_time = std::chrono::steady_clock::now();
-            //     latency = std::chrono::duration<double, std::micro>(after_time - before_time).count();
-            //     latency /= 10;
-            //     if ((*latencies_size).load() < max_latencies_size) {
-            //         int idx = (*latencies_size).fetch_add(1);
-            //         if (idx < max_latencies_size) {
-            //             latencies[idx] = (float)latency;
-            //         }
-            //     }
-            //     before_time = after_time;
-            // }
-
-            if (j % 1000 == 0) {
-                LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                        test_process_idx, j, MessageUtil::parseLength2(response));
-            }
             free(response);
+            (*query_num).fetch_add(1);
+            if ((j + 1) % 10 == 0) {
+                after_time = std::chrono::steady_clock::now();
+                latency = std::chrono::duration<double, std::micro>(after_time - before_time).count();
+                latency /= 10;
+                if ((*latencies_size).load() < max_latencies_size) {
+                    int idx = (*latencies_size).fetch_add(1);
+                    if (idx < max_latencies_size) {
+                        latencies[idx] = (float)latency;
+                    }
+                }
+                before_time = after_time;
+            }
         }
     };
     
@@ -116,29 +111,29 @@ void TestSharedClientMetricsClass::runClient() {
             sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
             rdma_client = (SharedRdmaClient *)_shared_memory;
             if (i == _num_test_thread) {
-                // while (true) {
-                //     sleep(1);
-                //     int qps = (*query_num).load();
-                //     int latsize = (*latencies_size).load();
-                //     std::sort(latencies, latencies + latsize);
-                //     float min_lat = 0.0, avg_lat = 0.0, max_lat = 0.0, p99_lat = 0.0;
-                //     if (latsize > 0) {
-                //         min_lat = latencies[0];
-                //         max_lat = latencies[latsize - 1];
-                //         avg_lat = [&] () -> float {
-                //             float total = 0.0;
-                //             for (int i = 0; i < latsize; ++i) {
-                //                 total += latencies[i];
-                //             }
-                //             return total / latsize;
-                //         }();
-                //         p99_lat = latencies[(int)(latsize * 0.99)];
-                //     }
-                //     (*query_num).store(0);
-                //     (*latencies_size).store(0);
-                //     printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p99_lat: %.2f, max_lat: %.2f\n",
-                //             qps, min_lat, avg_lat, p99_lat, max_lat);
-                // }
+                while (true) {
+                    sleep(1);
+                    int qps = (*query_num).load();
+                    int latsize = (*latencies_size).load();
+                    std::sort(latencies, latencies + latsize);
+                    float min_lat = 0.0, avg_lat = 0.0, max_lat = 0.0, p99_lat = 0.0;
+                    if (latsize > 0) {
+                        min_lat = latencies[0];
+                        max_lat = latencies[latsize - 1];
+                        avg_lat = [&] () -> float {
+                            float total = 0.0;
+                            for (int i = 0; i < latsize; ++i) {
+                                total += latencies[i];
+                            }
+                            return total / latsize;
+                        }();
+                        p99_lat = latencies[(int)(latsize * 0.99)];
+                    }
+                    (*query_num).store(0);
+                    (*latencies_size).store(0);
+                    printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p99_lat: %.2f, max_lat: %.2f\n",
+                            qps, min_lat, avg_lat, p99_lat, max_lat);
+                }
             } else {
                 func(i);
             }
