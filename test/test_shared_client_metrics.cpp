@@ -67,6 +67,8 @@ void TestSharedClientMetricsClass::runClient() {
     float *latencies = (float *)_shared_memory;
     _shared_memory += sizeof(float) * max_latencies_size;
 
+    _shared_memory += sizeof(double); // 确保不会出现问题
+
     auto func = [&] (uint32_t test_process_idx) {
         char content[1000000];
         int *length = (int *)content;
@@ -129,7 +131,7 @@ void TestSharedClientMetricsClass::runClient() {
                     }
                     (*query_num).store(0);
                     (*latencies_size).store(0);
-                    printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p99_lat: %.2f, max_lat: %.2f",
+                    printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p99_lat: %.2f, max_lat: %.2f\n",
                             qps, min_lat, avg_lat, p99_lat, max_lat);
                 }
             } else {
