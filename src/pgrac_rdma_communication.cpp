@@ -903,7 +903,7 @@ void CommonRdmaClient::sendThreadFun(uint32_t node_idx) {
         }
         (void) pthread_spin_unlock(send->spinlock);
         if (nowait == false) {
-          if (!USE_BUSY_POLLING) {
+          if (!USE_BACKEND_BUSY_POLLING) {
             (void) sem_post(&(awake->sems[slot_idx]));
           } else {
             awake->done[slot_idx] = true;
@@ -1026,7 +1026,7 @@ int CommonRdmaClient::PostRequest(void *send_content, uint64_t size) {
         return -1;
       }
 
-      if (!USE_BUSY_POLLING) {
+      if (!USE_BACKEND_BUSY_POLLING) {
         (void) sem_wait(&(awake->sems[rear]));
       } else {
         while (awake->done[rear] == false);
@@ -1091,7 +1091,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
 
   while (!this->stop) {
     epoll_event event;
-    if (!USE_RDMA_CLIENT_BUSY_POLLING) {
+    if (!USE_BUSY_POLLING) {
       rc = waitset->waitSetWait(&event);
       if (rc < 0 && errno != EINTR) {
         LOG_DEBUG("SharedRdmaClient sendThreadFun, send thread of %u, failed to waitsetwait", node_idx);
@@ -1147,7 +1147,7 @@ void SharedRdmaClient::sendThreadFun(uint32_t node_idx) {
           (void) pthread_spin_unlock(send->spinlock);
 
           if (nowait == false) {
-            if (!USE_BUSY_POLLING) {
+            if (!USE_BACKEND_BUSY_POLLING) {
               (void) sem_post(&(awake->sems[slot_idx]));
             } else {
               awake->done[slot_idx] = true;

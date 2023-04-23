@@ -8,8 +8,8 @@
 // 总的计算节点个数，每个计算节点的编号是0, 1 ... TOTAL_COMPUTE_NUM-1
 #define TOTAL_COMPUTE_NUM (2)
 
-// rdma server, 客户端是否使用忙等的方式来等待事件
-#define USE_BUSY_POLLING (true)
+// rdma客户端，服务器是否使用忙等的方式来得知发送消息的到来，以及响应的到来
+#define USE_BUSY_POLLING (false)
 
 /** 
  * 是否实现rdma框架层的组发送机制，也就是将一个qp中连续的多个消息一次性发送出去。
@@ -30,8 +30,8 @@
 #define SET_MSG_NUM_TO_IMM_DATA(imm_data, msg_num) \
     (imm_data = (msg_num | imm_data))
 
-// rdma客户端是否使用忙等的方式来得知发送消息的到来，以及响应的到来
-#define USE_RDMA_CLIENT_BUSY_POLLING (false)
+// backend是否使用忙等的方式来得知响应是否到来
+#define USE_BACKEND_BUSY_POLLING (true)
 
 
 // for test

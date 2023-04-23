@@ -540,7 +540,7 @@ protected:
      */
     template<class T>
     void waitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response, T callback) {
-      if (!USE_BUSY_POLLING) {
+      if (!USE_BACKEND_BUSY_POLLING) {
         (void) sem_wait(&(zawake->sems[rear]));
       } else {
         while (zawake->done[rear] == false);
