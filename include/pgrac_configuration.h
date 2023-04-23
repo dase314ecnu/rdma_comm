@@ -9,7 +9,7 @@
 #define TOTAL_COMPUTE_NUM (2)
 
 // rdma客户端，服务器是否使用忙等的方式来得知发送消息的到来，以及响应的到来
-#define USE_BUSY_POLLING (false)
+#define USE_BUSY_POLLING (true)
 
 /** 
  * 是否实现rdma框架层的组发送机制，也就是将一个qp中连续的多个消息一次性发送出去。
