@@ -22,6 +22,7 @@
 #include <map>
 #include <fcntl.h>
 #include <functional>
+#include <atomic>
 
 #include "pgrac_configuration.h"
 #include "test/test_shared_memory.h"
@@ -30,115 +31,129 @@
 #include "pgrac_waitset.h"
 #include "pgrac_log.h"
 
+class MemoryAllocator {
+public:
+  static size_t add_size(size_t s1, size_t s2, size_t align);
+  void init(char *memory, size_t size);
+  void reset();
+  /**
+   * size表示要分配空间的对象的大小
+   * align表示对象以多少字节对齐，align必须是2的次方，且要大于等于4
+   * 如果是128，则说明要使用cacheline优化
+   */
+  void *alloc(size_t size, size_t align = 4);
+
+private:
+  /* 获得size对齐后的大小 */
+  static size_t alignedSize(size_t size, size_t align);
+
+private:
+  char *_memory = nullptr;
+  size_t _size = 0;   // 内存总的大小
+  size_t _cur_free_offset = 0;  // 需要从_cur_scratch处开始分配对象
+};
+
 typedef struct QueuePairMeta
 {
-    uintptr_t registered_memory;
-    uint32_t registered_key;
-    uint32_t qp_num;
-    uint32_t qp_psn;
-    uint16_t lid;
-    union ibv_gid gid;
+  uintptr_t registered_memory;
+  uint32_t registered_key;
+  uint32_t qp_num;
+  uint32_t qp_psn;
+  uint16_t lid;
+  union ibv_gid gid;
 } QueuePairMetaData;
 
+/** 
+ * slot的状态转换是这个样子的：
+ *   1. 首先slot是SLOT_IDLE状态
+ *   2. 如果slot被分配去填充数据，则是SLOT_NOTWRITE状态
+ *   3. 如果slot已经填充好数据，则是SLOT_INPROGRESS
+ *   4. 如果slot上的响应已经被上层处理，则再转为SLOT_IDLE
+ */
 enum SlotState {
-    SLOT_IDLE,         /** 当前slot可以用于发送消息 */
-    SLOT_INPROGRESS,   /** 当前slot正在发送消息和等待响应 */
-    SLOT_OTHER
+  SLOT_IDLE,         /** 当前slot可以用于发送消息 */
+  SLOT_INPROGRESS,   /** 当前slot正在发送消息和等待响应 */
+  SLOT_NOTWRITE,     /** 虽然这个slot已经注定要写上数据，但是还没有写好数据 */
+  SLOT_OTHER
 };
 
 /** 
  * 当没有slot可以用时，空转轮询，而不是用条件变量等待。
  * 因为我们有个假设：slot都不可用的概率很小。如果使用条件变量，则我们
  * 必须使用pthread_mutext_t来保护ZSend，很显然，效率不好。
- * 
- * @todo: 为了实现字节对齐，需要写一个函数，例如是allocate()，然后这个函数负责
- * 将一个结构体在对应的buffer中分配好。还要写一个函数，来计算所需要的总共的共享内存
- * 大小
  */
 typedef struct ZSend {
-    SlotState *states = nullptr;  /** 一个QP的所有slot的状态 */
+    /** 
+     * 是否具有还未被发送的数据。如果has_unsent_data == 0，则说明没有数据填充到slot中，
+     * 但并不意味着没有backend意图要在slot中填充数据。has_unsent_data == 1，则说明
+     * 有backend已经将数据填充到slot中，亟待发送线程去发送。
+     */
+    union {
+      std::atomic<int> has_unsent_data = 0;  
+      char   pad_for_has_unsent_data[CACHE_LINE_SIZE];
+    };
+    /** 剩余free_slot_num个slot没有使用，是available的 */
+    union {
+      std::atomic<int> free_slot_num = 0; 
+      char   pad_for_free_slot_num[CACHE_LINE_SIZE];
+    };
+
+    /** 
+     * front <= notsent_front <= rear <= notwrite_rear
+     * 如果front == notwrite_rear，则意味着没有进程要发送数据
+     * 如果notsent_front == rear，则意味着填充好的数据都发送了
+     * 如果notsent_front == notwrite_rear，则意味着所有注定要发送的数据都发送出去了
+     */
+    union {
+      std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
+      char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
+    };
+    int       front = 0;       /** 最旧的还处于SLOT_INPROGRESS的slot */
+    int       rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
+    int       notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
+
     /** 
      * 表示每个slot上的请求者是否需要不同步等待最终的结果，如果不等待，则由发送线程来
      * 负责更新slot的状态，否则，应该由请求进程来更新slot的状态，因为请求进程需要先
      * 拿走结果之后，才能推进对应slot的状态。如果是发送线程来推进slot的状态，则有可能
      * 这个slot已经可用，并且数据被别的进程覆盖了，则当前进程无法获得正确的数据。
      * 正常情况下nowait是false，如果为true，则表示请求者希望直接异步发送请求，并且之后也不会等待结果
+     * 数组要cache line对齐
      */
     bool      *nowait = nullptr;  
     /** 
-     * 由于分片机制，所以又可能是某些slot组成一个消息，那么segment_nums[i]表示从i号slot
+     * 由于分片机制，所以有可能是某些slot组成一个消息，那么segment_nums[i]表示从i号slot
      * 开始的segment_nums[i]个slot是组成一个消息
+     * 数组要cache line对齐
      */
     int       *segment_nums = nullptr;
-    uint64_t   front = 0;  /** 最旧的还处于SLOT_INPROGRESS的slot */
-    uint64_t   rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
-    uint64_t   notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
-    uint64_t   notsent_rear  = 0;    /** front到rear中还未发送的slot的最新的那个的后面 */
-    pthread_spinlock_t *spinlock = nullptr;     /** 使用自旋锁保护这个ZSend @todo */
+    /** 
+     * 一个QP的所有slot的状态。数组要cache line对齐
+     */
+    std::atomic<SlotState> *states = nullptr;  
     
     ZSend() {}
-    /** 
-     * @param _shared_memroy: ZSend是否是进程间共享的，如果是的话，
-     * 则_shared_memory不为nullptr, 并且ZSend和status要床在_shared_memroy中
-     */
-    ZSend(void *_shared_memory, uint64_t _slot_num) {
-        int shared = (_shared_memory == nullptr ? 0 : 1);
-        char *scratch = nullptr;
-        if (shared != 0) {
-          scratch = (char *)_shared_memory;
-        }
-        // 初始化spinlock
-        if (shared != 0) {
-          this->spinlock = (pthread_spinlock_t *)(scratch);
-          scratch += sizeof(pthread_spinlock_t);
-        } else {
-          this->spinlock = new pthread_spinlock_t();
-        }
-        if (pthread_spin_init(this->spinlock, shared) != 0) {
-            throw std::bad_exception();
-        }
-        // 给this->states分配空间并初始化
-        if (shared != 0) {
-            this->states = (SlotState *)scratch;
-            scratch += sizeof(SlotState) * (_slot_num + 1);
-        } else {
-            this->states = new SlotState[_slot_num + 1];
-            if (this->states == nullptr) {
-                throw std::bad_exception();
-            }
-        }
-        for (int i = 0; i < _slot_num + 1; ++i) {
-            this->states[i] = SlotState::SLOT_IDLE;
-        }
+    
+    ZSend(int slot_num, MemoryAllocator *allocator) {
+      size_t size = sizeof(bool) * (slot_num + 1);
+      this->nowait = (bool *)(allocator->alloc(size, CACHE_LINE_SIZE));
+      memset(this->nowait, 0, size);
+      
+      size = sizeof(int) * (slot_num + 1);
+      this->segment_nums = (int *)(allocator->alloc(size, CACHE_LINE_SIZE));
 
-        if (shared != 0) {
-          this->nowait = (bool *)scratch;
-          scratch += sizeof(bool) * (_slot_num + 1);
-        } else {
-          this->nowait = new bool[_slot_num + 1];
-          if (this->nowait == nullptr) {
-            throw std::bad_exception();
-          }
-        }
-        memset(this->nowait, 0, sizeof(bool) * (_slot_num + 1));
-
-        if (shared != 0) {
-          this->segment_nums = (int *)scratch;
-        } else {
-          this->segment_nums = new int[_slot_num + 1];
-          if (this->segment_nums == nullptr) {
-            throw std::bad_exception();
-          }
-        }
-        memset(this->segment_nums, 0, sizeof(int) * (_slot_num + 1));
+      size = sizeof(std::atomic<SlotState>) * (slot_num + 1);
+      this->states = (std::atomic<SlotState> *)(allocator->alloc(size, 128));
+      for (int i = 0; i < slot_num + 1; ++i) {
+        this->states[i].store(SlotState::SLOT_IDLE);
+      }
     }
 
-    static uint64_t GetSharedObjSize(uint64_t slot_num) {
-      uint64_t size = 0;
-      size += sizeof(ZSend);
-      size += sizeof(SlotState) * (slot_num + 1) + sizeof(pthread_spinlock_t) + sizeof(bool) * (slot_num + 1)
-              + sizeof(int) * (slot_num + 1);
-      size += sizeof(double);
+    static size_t GetSharedObjSize(int slot_num) {
+      size_t size = 0;
+      size += MemoryAllocator::add_size(size, sizeof(bool) * (slot_num + 1), CACHE_LINE_SIZE);
+      size += MemoryAllocator::add_size(size, sizeof(int) * (slot_num + 1), CACHE_LINE_SIZE);
+      size += MemoryAllocator::add_size(size, sizeof(std::atomic<SlotState>) * (slot_num + 1), CACHE_LINE_SIZE);
       return size;
     }
 } ZSend;
@@ -149,54 +164,40 @@ typedef struct ZAwake {
     // 如果是忙等，也就是定义了USE_BUSY_POLLING，则需要原子变量来标识消息是否执行完成。
     volatile bool  *done = nullptr;
     ZAwake() {}
-    ZAwake(void *_shared_memory, uint64_t _slot_num) {
-        int shared = (_shared_memory == nullptr ? 0 : 1);
-        int i = 0;
-        SCOPEEXIT([&]() {
-            if (i < _slot_num + 1) {
-                // sems并没有完全初始化完成
-                if (this->sems != nullptr) {
-                    for (int j = 0; j < i; ++j) {
-                        (void) sem_destroy(&(this->sems[j]));
-                    }
-                    if (shared == 0) {
-                        delete[] this->sems;
-                    }
-                    this->sems = nullptr;
-                }
+    ZAwake(int slot_num, MemoryAllocator *allocator) {
+      int i = 0;
+      size_t size = 0;
+      SCOPEEXIT([&]() {
+        if (i < slot_num + 1) {
+          // sems并没有完全初始化完成
+          if (this->sems != nullptr) {
+            for (int j = 0; j < i; ++j) {
+              (void) sem_destroy(&(this->sems[j]));
             }
-        });
+            this->sems = nullptr;
+          }
+        }
+      });
 
-        if (shared != 0) {
-            char *scratch = (char *)_shared_memory;
-            this->sems = (sem_t *)scratch;
-            scratch += sizeof(sem_t) * (_slot_num + 1);
-            this->done = (volatile bool *)scratch;
-        } else {
-            this->sems = new sem_t[_slot_num + 1];
-            if (this->sems == nullptr) {
-                throw std::bad_exception();
-            }
-            this->done = new volatile bool[_slot_num + 1];
-            if (this->done == nullptr) {
-              throw std::bad_exception();
-            }
+      size = sizeof(sem_t) * (slot_num + 1);
+      this->sems = (sem_t *)(allocator->alloc(size, CACHE_LINE_SIZE));
+      size = sizeof(volatile bool) * (slot_num + 1);
+      this->done = (volatile bool *)(allocator->alloc(size, CACHE_LINE_SIZE));
+
+      for (i = 0; i < slot_num + 1; ++i) {
+        if (sem_init(&(this->sems[i]), 1, 0) != 0) {
+          throw std::bad_exception();
         }
-        for (i = 0; i < _slot_num + 1; ++i) {
-            if (sem_init(&(this->sems[i]), shared, 0) != 0) {
-                throw std::bad_exception();
-            }
-        }
-        for (int i = 0; i < _slot_num + 1; ++i) {
-          this->done[i] = false;
-        }
+      }
+      for (int i = 0; i < slot_num + 1; ++i) {
+        this->done[i] = false;
+      }
     }
 
-    static uint64_t GetSharedObjSize(uint64_t slot_num) {
-      uint64_t size = 0;
-      size += sizeof(ZAwake);
-      size += sizeof(sem_t) * (slot_num + 1);
-      size += sizeof(volatile bool) * (slot_num + 1);
+    static size_t GetSharedObjSize(int slot_num) {
+      size_t size = 0;
+      size += MemoryAllocator::add_size(size, sizeof(sem_t) * (slot_num + 1), CACHE_LINE_SIZE);
+      size += MemoryAllocator::add_size(size, sizeof(volatile bool) * (slot_num + 1), CACHE_LINE_SIZE);
       return size;
     }
 } ZAwake;

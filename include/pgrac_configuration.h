@@ -33,6 +33,7 @@
 // backend是否使用忙等的方式来得知响应是否到来
 #define USE_BACKEND_BUSY_POLLING (true)
 
+#define CACHE_LINE_SIZE (128)
 
 // for test
 #define IS_SERVER (1)   // 是否是RdmaServer

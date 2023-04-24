@@ -21,6 +21,49 @@
 #include "pgrac_waitset.h"
 #include "pgrac_log.h"
 
+/** 
+ * ---------------------------------------------------------------------------------------------
+ * MemoryAllocator
+ * ---------------------------------------------------------------------------------------------
+ */
+size_t MemoryAllocator::add_size(size_t s1, size_t s2, size_t align) {
+  return alignedSize(s1, align) + s2;
+}
+
+void MemoryAllocator::init(char *memory, size_t size) {
+  uintptr_t scratch = reinterpret_cast<uintptr_t>(memory);
+  uintptr_t scratch_aligned = this->alignedSize(scratch, CACHE_LINE_SIZE);
+  uintptr_t offset = scratch_aligned - scratch;
+  if (offset >= _size) {
+    throw std::bad_exception();
+  }
+  _memory = memory + offset;
+  _size = size - offset;
+}
+
+void MemoryAllocator::reset() {
+  _memory = nullptr;
+  _size = 0;
+  _cur_free_offset = 0;
+}
+
+void *MemoryAllocator::alloc(size_t size, size_t align) {
+  uintptr_t new_offset = this->alignedSize(_cur_free_offset, align);
+  if (new_offset + size > _size) {
+    throw std::bad_exception();
+  }
+  char *res = _memory + new_offset;
+  _cur_free_offset = new_offset + size;
+  return (void *)(res);
+}
+
+size_t MemoryAllocator::alignedSize(size_t size, size_t align) {
+  return (((size_t) size + (align - 1)) & ~((size_t) (align - 1)));
+}
+
+
+
+
 int RdmaQueuePair::initializeLocalRdmaResource() {
   struct ibv_device **device_list = nullptr;
   int rc = 0;
