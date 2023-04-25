@@ -87,8 +87,8 @@ typedef struct ZSend {
    * 有backend已经将数据填充到slot中，亟待发送线程去发送。
    */
   union {
-    std::atomic<int> has_unsent_data = 0;  
-    char   pad_for_has_unsent_data[CACHE_LINE_SIZE];
+    std::atomic<int> has_notification = 0;  
+    char   pad_for_has_notification[CACHE_LINE_SIZE];
   } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
   /** 剩余free_slot_num个slot没有使用，是available的 */
@@ -97,17 +97,17 @@ typedef struct ZSend {
     char   pad_for_free_slot_num[CACHE_LINE_SIZE];
   } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
+  union {
+    std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
+    char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
+  } __attribute__ ((aligned(CACHE_LINE_SIZE)));
+  
   /** 
    * front <= notsent_front <= rear <= notwrite_rear
    * 如果front == notwrite_rear，则意味着没有进程要发送数据
    * 如果notsent_front == rear，则意味着填充好的数据都发送了
    * 如果notsent_front == notwrite_rear，则意味着所有注定要发送的数据都发送出去了
    */
-  union {
-    std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
-    char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
-  } __attribute__ ((aligned(CACHE_LINE_SIZE)));
-
   int       front = 0;       /** 最旧的还处于SLOT_INPROGRESS的slot */
   int       rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
   int       notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
@@ -539,7 +539,14 @@ private:
      * rear: backend从rear开始的很多slot存储着要发送的消息，因此rear也是响应到来的那个slot
      */
     template<class T>
-    void waitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response, T callback) {
+    void waitForResponse(int node_idx, int rear, void **response, T callback) {
+      char c;
+      int rc;
+      ZSend *zsend = &(_sends[node_idx].zsend);
+      ZAwake *zawake = &(_awakes[node_idx]);
+      char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
+                  + rear * _slot_size;
+      
       if (!USE_BACKEND_BUSY_POLLING) {
         (void) sem_wait(&(zawake->sems[rear]));
       } else {
@@ -563,6 +570,14 @@ private:
       for (int k = 0; k < zsend->segment_nums[rear]; ++k) {
         int p = (rear + k) % (_slot_num + 1);
         zsend->states[p].store(SlotState::SLOT_IDLE);
+      }
+      std::atomic_thread_fence(std::memory_order_seq_cst);
+      zsend->has_notification.store(1);
+      if (!USE_BUSY_POLLING) {
+        rc = send(_listen_fd[node_idx * 2], &c, 1, 0); 
+        if (rc <= 0) {
+          return -1;
+        }
       }
     }
     
