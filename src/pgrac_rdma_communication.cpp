@@ -256,10 +256,10 @@ int RdmaQueuePair::modifyQPtoRTS() {
   return 0;
 }
 
-RdmaQueuePair::RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size, 
-            void *_shared_memory, const char *_device_name, uint32_t _rdma_port)
-            : local_slot_num(_local_slot_num), local_slot_size(_local_slot_size), 
-              device_name(_device_name), rdma_port(_rdma_port)
+RdmaQueuePair::RdmaQueuePair(int local_slot_num, int local_slot_size, 
+            void *_shared_memory, const char *device_name, uint32_t rdma_port)
+            : local_slot_num(local_slot_num), local_slot_size(local_slot_size), 
+              device_name(device_name), rdma_port(rdma_port)
 {
   // Initialize local memory for the QP to register in MR
   this->local_memory_size = this->local_slot_size * (this->local_slot_num + 1);
@@ -308,7 +308,7 @@ void* RdmaQueuePair::GetLocalMemory() {
   return this->local_memory;
 }
 
-uint64_t RdmaQueuePair::GetLocalMemorySize() {
+size_t RdmaQueuePair::GetLocalMemorySize() {
   return this->local_memory_size;
 }
 
@@ -481,9 +481,9 @@ void RdmaQueuePair::SetRemoteQPMetaData(QueuePairMetaData &remote_data) {
  * -----------------------------------------------------------------------------------------------------
  */
 RdmaClient::RdmaClient(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
-            int node_num)
+            int node_num, int slot_size, int slot_num)
             : _remote_ip{remote_ip}, _remote_port{remote_port}, _allocator{allocator},
-              _node_num{node_num}
+              _node_num{node_num}, _slot_size{slot_size}, _slot_num{slot_num}
 {
   int rc = 0;
   size_t size = 0;
@@ -492,33 +492,6 @@ RdmaClient::RdmaClient(std::string remote_ip, uint32_t remote_port, MemoryAlloca
   if (rc != 0) {
     throw std::bad_exception();
   }
-  
-  // this->sends = (ZSend *)scratch;
-  // scratch += sizeof(ZSend) * this->node_num;
-  // for (int i = 0; i < this->node_num; ++i) {
-  //   try {
-  //     new (&this->sends[i]) ZSend(scratch, this->slot_num);
-  //     scratch += sizeof(SlotState) * (this->slot_num + 1) + sizeof(pthread_spinlock_t);
-  //     scratch += sizeof(bool) * (this->slot_num + 1);
-  //     scratch += sizeof(int) * (this->slot_num + 1);
-
-  //     scratch += sizeof(double);
-  //   } catch (...) {
-  //     throw std::bad_exception();
-  //   }
-  // }
-
-  // this->awakes = (ZAwake *)scratch;
-  // scratch += sizeof(ZAwake) * this->node_num;
-  // for (int i = 0; i < this->node_num; ++i) {
-  //   try {
-  //     new (&this->awakes[i]) ZAwake(scratch, this->slot_num);
-  //     scratch += sizeof(sem_t) * (this->slot_num + 1);
-  //     scratch += sizeof(volatile bool) * (this->slot_num + 1);
-  //   } catch (...) {
-  //     throw std::bad_exception();
-  //   }
-  // }
 }
 
 RdmaClient::~RdmaClient() {
@@ -579,7 +552,7 @@ int RdmaClient::createRdmaQueuePairs() {
   int rc = 0;
   size_t size = 0;
   
-  size = sizeof(RdmaQueuePair *) * this->_node_num;
+  size = sizeof(RdmaQueuePair *) * _node_num;
   try {
     this->_rdma_queue_pairs = (RdmaQueuePair **)(_allocator->alloc(size, 8));
   } catch (...) {
@@ -589,14 +562,19 @@ int RdmaClient::createRdmaQueuePairs() {
   if (this->_rdma_queue_pairs == nullptr) {
     return -1;
   }
-  for (int i = 0; i < this->_node_num; ++i) {
+  for (int i = 0; i < _node_num; ++i) {
     this->_rdma_queue_pairs[i] = nullptr;
   }
 
-  for (int i = 0; i < this->_node_num; ++i) {
+  for (int i = 0; i < _node_num; ++i) {
     size = sizeof(RdmaQueuePair);
     try {
       this->_rdma_queue_pairs[i] = (RdmaQueuePair *)(_allocator->alloc(size, 8));
+      size = (size_t)_slot_size * (_slot_num + 1);
+      void *shared_memory = _allocator->alloc(size, CACHE_LINE_SIZE);
+      this->_rdma_queue_pairs[i] = new RdmaQueuePair(_slot_num, _slot_size, shared_memory,
+              DEVICE_NAME, RDMA_PORT);
+
     } catch (...) {
       throw std::bad_exception();
     }
@@ -988,18 +966,39 @@ void* SharedRdmaClient::sendThreadFunEntry(void *arg) {
   return args;
 }
 
-SharedRdmaClient::SharedRdmaClient(uint64_t _slot_size, uint64_t _slot_num, 
-            std::string _remote_ip, uint32_t _remote_port, 
-            uint32_t _node_num, void* _shared_memory, int *_listen_fd)
-            : RdmaClient(_slot_size, _slot_num, _remote_ip, _remote_port, 
-                         _node_num, _shared_memory)
+SharedRdmaClient::SharedRdmaClient(int slot_size, int slot_num, std::string remote_ip, uint32_t remote_port, 
+          int node_num, void* shared_memory, int *listend_fd)
+            : RdmaClient()
 {
   LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
+  size_t size = 0;
 
-  this->listen_fd = _listen_fd;
-  this->use_shared_memory = true;
+  MemoryAllocator *allocaotor = new MemoryAllocator();
+  allocaotor->init((char *)shared_memory, GetSharedObjSize(slot_size, slot_num, node_num));
+  RdmaClient(remote_ip, remote_port, allocaotor, node_num, slot_size, slot_num);
 
-  pthread_spin_init(&(this->start_idx_lock), 1);
+  this->_listen_fd = _listen_fd;
+  _start_idx.store(0);
+  
+  size = sizeof(ZSendPad) * node_num;
+  _sends = (ZSendPad *)(_allocator->alloc(size, CACHE_LINE_SIZE));
+  for (int i = 0; i < _node_num; ++i) {
+    try {
+      new (&(_sends[i].zsend))ZSend(_slot_num, _allocator);
+    } catch (...) {
+      throw std::bad_exception();
+    }
+  }
+
+  size = sizeof(ZAwake) * node_num;
+  _awakes = (ZAwake *)(_allocator->alloc(size, CACHE_LINE_SIZE));
+  for (int i = 0; i < _node_num; ++i) {
+    try {
+      new (&_awakes[i])ZAwake(_slot_num, _allocator);
+    } catch (...) {
+      throw std::bad_exception();
+    }
+  }
 
   LOG_DEBUG("SharedRdmaClient End to construct the SharedRdmaClient\n");
 }
@@ -1243,20 +1242,25 @@ void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, uint64_t size,
   return;
 }
 
-uint64_t SharedRdmaClient::GetSharedObjSize(uint64_t _slot_size, uint64_t _slot_num, 
-            uint32_t _node_num) 
+size_t SharedRdmaClient::GetSharedObjSize(int slot_size, int slot_num, int node_num) 
 {
-  uint64_t size = 0;
-  size += sizeof(SharedRdmaClient);
-  size += ZSend::GetSharedObjSize(_slot_num);
+  size_t size = 0;
+  size += MemoryAllocator::add_size(size, sizeof(RdmaQueuePair *) * node_num, CACHE_LINE_SIZE);
+  for (int i = 0; i < node_num; ++i) {
+    size += MemoryAllocator::add_size(size, sizeof(RdmaQueuePair), 8);
+    size += MemoryAllocator::add_size(size, (size_t)slot_size * (slot_num + 1), CACHE_LINE_SIZE);
+  }
+  size += MemoryAllocator::add_size(size, sizeof(ZSendPad) * node_num, CACHE_LINE_SIZE);
+  for (int i = 0; i < node_num; ++i) {
+    size += MemoryAllocator::add_size(size, ZSend::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
+  }
+  size += MemoryAllocator::add_size(size, sizeof(ZAwake) * node_num, CACHE_LINE_SIZE);
+  for (int i = 0; i < node_num; ++i) {
+    size += MemoryAllocator::add_size(size, ZAwake::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
+  }
 
-  size += ZAwake::GetSharedObjSize(_slot_num);
-
-  size += sizeof(RdmaQueuePair *) * _node_num;
-  // _slot_size * (_slot_num + 1)是注册内存的大小
-  size += (sizeof(RdmaQueuePair) + _slot_size * (_slot_num + 1)) * _node_num;
-
-  return size * 2; // 多申请一些，防止越界。
+  // 多申请一些
+  return size * 2;
 }
 
 

@@ -83,82 +83,90 @@ enum SlotState {
  * 必须使用pthread_mutext_t来保护ZSend，很显然，效率不好。
  */
 typedef struct ZSend {
-    /** 
-     * 是否具有还未被发送的数据。如果has_unsent_data == 0，则说明没有数据填充到slot中，
-     * 但并不意味着没有backend意图要在slot中填充数据。has_unsent_data == 1，则说明
-     * 有backend已经将数据填充到slot中，亟待发送线程去发送。
-     */
-    union {
-      std::atomic<int> has_unsent_data = 0;  
-      char   pad_for_has_unsent_data[CACHE_LINE_SIZE];
-    };
-    /** 剩余free_slot_num个slot没有使用，是available的 */
-    union {
-      std::atomic<int> free_slot_num = 0; 
-      char   pad_for_free_slot_num[CACHE_LINE_SIZE];
-    };
+  /** 
+   * 是否具有还未被发送的数据。如果has_unsent_data == 0，则说明没有数据填充到slot中，
+   * 但并不意味着没有backend意图要在slot中填充数据。has_unsent_data == 1，则说明
+   * 有backend已经将数据填充到slot中，亟待发送线程去发送。
+   */
+  union {
+    std::atomic<int> has_unsent_data = 0;  
+    char   pad_for_has_unsent_data[CACHE_LINE_SIZE];
+  } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
-    /** 
-     * front <= notsent_front <= rear <= notwrite_rear
-     * 如果front == notwrite_rear，则意味着没有进程要发送数据
-     * 如果notsent_front == rear，则意味着填充好的数据都发送了
-     * 如果notsent_front == notwrite_rear，则意味着所有注定要发送的数据都发送出去了
-     */
-    union {
-      std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
-      char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
-    };
-    int       front = 0;       /** 最旧的还处于SLOT_INPROGRESS的slot */
-    int       rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
-    int       notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
+  /** 剩余free_slot_num个slot没有使用，是available的 */
+  union {
+    std::atomic<int> free_slot_num = 0; 
+    char   pad_for_free_slot_num[CACHE_LINE_SIZE];
+  } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
-    /** 
-     * 表示每个slot上的请求者是否需要不同步等待最终的结果，如果不等待，则由发送线程来
-     * 负责更新slot的状态，否则，应该由请求进程来更新slot的状态，因为请求进程需要先
-     * 拿走结果之后，才能推进对应slot的状态。如果是发送线程来推进slot的状态，则有可能
-     * 这个slot已经可用，并且数据被别的进程覆盖了，则当前进程无法获得正确的数据。
-     * 正常情况下nowait是false，如果为true，则表示请求者希望直接异步发送请求，并且之后也不会等待结果
-     * 数组要cache line对齐
-     */
-    bool      *nowait = nullptr;  
-    /** 
-     * 由于分片机制，所以有可能是某些slot组成一个消息，那么segment_nums[i]表示从i号slot
-     * 开始的segment_nums[i]个slot是组成一个消息
-     * 数组要cache line对齐
-     */
-    int       *segment_nums = nullptr;
-    /** 一个QP的所有slot的状态。数组要cache line对齐 */
-    std::atomic<SlotState> *states = nullptr;  
-    
-    ZSend() {}
-    
-    ZSend(int slot_num, MemoryAllocator *allocator) {
-      try {
-        size_t size = sizeof(bool) * (slot_num + 1);
-        this->nowait = (bool *)(allocator->alloc(size, CACHE_LINE_SIZE));
-        memset(this->nowait, 0, size);
-        
-        size = sizeof(int) * (slot_num + 1);
-        this->segment_nums = (int *)(allocator->alloc(size, CACHE_LINE_SIZE));
+  /** 
+   * front <= notsent_front <= rear <= notwrite_rear
+   * 如果front == notwrite_rear，则意味着没有进程要发送数据
+   * 如果notsent_front == rear，则意味着填充好的数据都发送了
+   * 如果notsent_front == notwrite_rear，则意味着所有注定要发送的数据都发送出去了
+   */
+  union {
+    std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
+    char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
+  } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
-        size = sizeof(std::atomic<SlotState>) * (slot_num + 1);
-        this->states = (std::atomic<SlotState> *)(allocator->alloc(size, 128));
-        for (int i = 0; i < slot_num + 1; ++i) {
-          this->states[i].store(SlotState::SLOT_IDLE);
-        }
-      } catch (...) {
-        throw std::bad_exception();
+  int       front = 0;       /** 最旧的还处于SLOT_INPROGRESS的slot */
+  int       rear = 0;       /** 最新的还处于SLOT_INPROGRESS的slot的后面 */
+  int       notsent_front = 0;    /** front到rear中还未发送的slot的最旧的那个 */
+
+  /** 
+   * 表示每个slot上的请求者是否需要不同步等待最终的结果，如果不等待，则由发送线程来
+   * 负责更新slot的状态，否则，应该由请求进程来更新slot的状态，因为请求进程需要先
+   * 拿走结果之后，才能推进对应slot的状态。如果是发送线程来推进slot的状态，则有可能
+   * 这个slot已经可用，并且数据被别的进程覆盖了，则当前进程无法获得正确的数据。
+   * 正常情况下nowait是false，如果为true，则表示请求者希望直接异步发送请求，并且之后也不会等待结果
+   * 数组要cache line对齐
+   */
+  bool      *nowait = nullptr;  
+  /** 
+   * 由于分片机制，所以有可能是某些slot组成一个消息，那么segment_nums[i]表示从i号slot
+   * 开始的segment_nums[i]个slot是组成一个消息
+   * 数组要cache line对齐
+   */
+  int       *segment_nums = nullptr;
+  /** 一个QP的所有slot的状态。数组要cache line对齐 */
+  std::atomic<SlotState> *states = nullptr;  
+  
+  ZSend() {}
+  
+  ZSend(int slot_num, MemoryAllocator *allocator) {
+    try {
+      size_t size = sizeof(bool) * (slot_num + 1);
+      this->nowait = (bool *)(allocator->alloc(size, CACHE_LINE_SIZE));
+      memset(this->nowait, 0, size);
+      
+      size = sizeof(int) * (slot_num + 1);
+      this->segment_nums = (int *)(allocator->alloc(size, CACHE_LINE_SIZE));
+
+      size = sizeof(std::atomic<SlotState>) * (slot_num + 1);
+      this->states = (std::atomic<SlotState> *)(allocator->alloc(size, CACHE_LINE_SIZE));
+      for (int i = 0; i < slot_num + 1; ++i) {
+        this->states[i].store(SlotState::SLOT_IDLE);
       }
+    } catch (...) {
+      throw std::bad_exception();
     }
+  }
 
-    static size_t GetSharedObjSize(int slot_num) {
-      size_t size = 0;
-      size += MemoryAllocator::add_size(size, sizeof(bool) * (slot_num + 1), CACHE_LINE_SIZE);
-      size += MemoryAllocator::add_size(size, sizeof(int) * (slot_num + 1), CACHE_LINE_SIZE);
-      size += MemoryAllocator::add_size(size, sizeof(std::atomic<SlotState>) * (slot_num + 1), CACHE_LINE_SIZE);
-      return size;
-    }
+  static size_t GetSharedObjSize(int slot_num) {
+    size_t size = 0;
+    size += MemoryAllocator::add_size(size, sizeof(bool) * (slot_num + 1), CACHE_LINE_SIZE);
+    size += MemoryAllocator::add_size(size, sizeof(int) * (slot_num + 1), CACHE_LINE_SIZE);
+    size += MemoryAllocator::add_size(size, sizeof(std::atomic<SlotState>) * (slot_num + 1), CACHE_LINE_SIZE);
+    return size;
+  }
 } ZSend;
+
+/** 用于将ZSend占用空间pad到CACHE_LINE_SIZE字节对齐 */
+typedef union ZSendPad {
+  ZSend zsend;
+  unsigned char _pad[(sizeof(zsend) + CACHE_LINE_SIZE - 1) & (~((size_t) (CACHE_LINE_SIZE - 1)))];
+} ZSendPad;
 
 typedef struct ZAwake {
     /** 每个slot都对应一个sem_t，每当进程/线程要等待响应时，就使用这里的sems */
@@ -214,13 +222,13 @@ typedef struct ZAwake {
  */
 class RdmaQueuePair{
 public:
-  RdmaQueuePair(uint64_t _local_slot_num, uint64_t _local_slot_size, 
-          void *_shared_memory, const char *_device_name = "mlx5_0", uint32_t _rdma_port = 1);
+  RdmaQueuePair(int local_slot_num, int local_slot_size, 
+          void *shared_memory, const char *device_name = "mlx5_0", uint32_t rdma_port = 1);
   ~RdmaQueuePair();
   /* 销毁RdmdaQueuePair中创建所有的资源 */
   void Destroy();
   void*    GetLocalMemory();
-  uint64_t GetLocalMemorySize();
+  size_t GetLocalMemorySize();
   /** 得到ibv_comp_channel */
   ibv_comp_channel  *GetChannel();
   /** 在slot_idx的slot处赋值长度为size的send_content */
@@ -291,9 +299,10 @@ private:
  */
 class RdmaClient {
 public:
+  RdmaClient() {}
   /** 创建相关RDMA资源 */
   RdmaClient(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
-          int node_num);
+          int node_num, int slot_size, int slot_num);
   ~RdmaClient();
   /** Destroy all the resources of RdmaClient */
   void Destroy();
@@ -303,6 +312,8 @@ protected:
   RdmaQueuePair     **_rdma_queue_pairs = nullptr;
   MemoryAllocator    *_allocator = nullptr;
   int                 _node_num = 0;
+  int                 _slot_size = 0;
+  int                 _slot_num = 0;
 
 private:
   std::string         _remote_ip;    //连接远程服务器的ip
@@ -414,7 +425,7 @@ public:
    * listen_fd: node_num个socket pair
    * */
   SharedRdmaClient(int slot_size, int slot_num, std::string remote_ip, uint32_t remote_port, 
-          int node_num, void* shared_memory, int *_listend_fd);
+          int node_num, void* shared_memory, int *listend_fd);
   ~SharedRdmaClient();
   /** 启动所有发送线程 */
   int Run();
@@ -423,7 +434,7 @@ public:
   /** Destroy all the resources of the SharedRdmaClient */
   void Destroy();
 
-  void WaitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response);
+  void WaitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response);
 
   /** 
    * 调用SharedRdmaClient的发送消息的接口，返回内容放在response中。
@@ -437,58 +448,66 @@ public:
   }
   
   /** 
-   * 这个是PostRequest()的异步版本。它在调用ibv_post_send()之后不会等待响应到来，而是直接返回。
+   * 这个是PostRequest()的半同步版本。它在调用ibv_post_send()之后不会等待响应到来，而是直接返回。
+   * 但是最终调用者需要使用返回的wait对象来等待响应
    */
   auto AsyncPostRequest(void *send_content, int size, int* ret) 
       -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
       (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1));
   
   /** 
-   * 和AsyncPostRequest()类似，但是上层不需要等待结果
+   * 和AsyncPostRequest()类似，是个纯异步的api。但是上层不需要等待结果
    */
   void AsyncPostRequestNowait(void *send_content, int size, int *ret);
+
+  /** 
+   * 和AsyncPostRequest()类似，是个纯异步的api。但是上层不需要等待结果，只需要传递callback到下层
+   */
+  template<class T>
+  void AsyncPostRequestNowait(void *send_content, int size, int *ret, T callback);
   
   /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
    * 以及需要共享的数据的总大小。
    * 这个函数和SharedRdmaClient(), RdmaClient(), createRdmaQueuePairs()函数紧耦合了。
    */
-  static uint64_t GetSharedObjSize(int slot_size, int slot_num, 
-          int _node_num);
+  static size_t GetSharedObjSize(int slot_size, int slot_num, int node_num);
 
 private:
     struct Args {
-        uint32_t node_idx = 0;
+        int node_idx = 0;
         SharedRdmaClient *client = nullptr;
     };
-    
-    /** 
-     * stop为true，表示要终止所有发送线程，发送线程要循环检查这个变量
-     */
-    volatile bool stop = false;
 
-protected:
-    /** 
-     * 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，
-     * 说明某个slot中含有要发送的数据。
-     * */
-    int       *listen_fd = nullptr;     /* node_num * 2长度 */
-    pthread_t  *send_threads = nullptr;  /* node_num长度 */
-
+private:
     /** 
      * 用于RoundRobin算法
      * 每次从start_idx号的node找可以用于发送的node，每次PostRequest后start_idx = (start_idx + 1) % node_num
      */
-    uint32_t start_idx = 0;
-    pthread_spinlock_t start_idx_lock;
+    union {
+      std::atomic<int> _start_idx = 0;
+      char   pad_for_start_idx[CACHE_LINE_SIZE];
+    } __attribute__ ((aligned(CACHE_LINE_SIZE)));
+    
+    /** 
+     * stop为true，表示要终止所有发送线程，发送线程要循环检查这个变量
+     */
+    volatile bool _stop = false;
 
-    uint64_t           slot_size = 0;
-    uint64_t           slot_num = 0;
-    ZSend      *sends = nullptr;        // node_num长度
-    ZAwake     *awakes = nullptr;       // node_num长度
+    /** 
+     * 每个node（发送线程）监听一个listen_fd[i][1]，如果有消息来，
+     * 说明某个slot中含有要发送的数据。
+     * */
+    int       *_listen_fd = nullptr;     /* node_num * 2长度 */
+    pthread_t  *_send_threads = nullptr;  /* node_num长度 */
 
-protected:
+    int           _slot_size = 0;
+    int           _slot_num = 0;
+    ZSendPad      *_sends = nullptr;        // node_num长度
+    ZAwake     *_awakes = nullptr;       // node_num长度
+
+private:
     /** 发送线程执行的代码 */
-    void sendThreadFun(uint32_t node_idx);
+    void sendThreadFun(int node_idx);
     static void *sendThreadFunEntry(void *arg);
 
     /** 
@@ -497,11 +516,11 @@ protected:
      * out_node_idx: 输出参数，找到的需要进行数据发送的node的编号
      * out_rear: 输出参数，node_idx号node上，在rear号开始的几个slot上存放要发送的数据
      */
-    int rrLoadBalanceStrategy(void *send_content, uint64_t size, bool nowait, 
-            uint64_t *out_node_idx, uint64_t *out_rear);
+    int rrLoadBalanceStrategy(void *send_content, int size, bool nowait, 
+            int *out_node_idx, int *out_rear);
     
     /* 由于分片机制，需要确定一个消息需要多少个slot分片来发送 */
-    int getNeededSegmentNum(uint64_t size);
+    int getNeededSegmentNum(int size);
 
     /** 
      * 由于分片机制，检查node_idx号node是否可以用于发送数据。若slot有100个，是0 - 99，
@@ -512,8 +531,8 @@ protected:
      * start_rear: 从start_rear开始填充的数据
      * rear2: 输出参数。如果成功check，则更新后的rear是什么
      */
-    bool checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, 
-            uint64_t *start_rear, uint64_t *rear2);
+    bool checkNodeCanSend(int node_idx, void *send_content, int size, 
+            int *start_rear, int *rear2);
     
     // @todo
     /** 
