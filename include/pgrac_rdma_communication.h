@@ -66,14 +66,12 @@ typedef struct QueuePairMeta
 /** 
  * slot的状态转换是这个样子的：
  *   1. 首先slot是SLOT_IDLE状态
- *   2. 如果slot被分配去填充数据，则是SLOT_NOTWRITE状态
- *   3. 如果slot已经填充好数据，则是SLOT_INPROGRESS
- *   4. 如果slot上的响应已经被上层处理，则再转为SLOT_IDLE
+ *   2. 如果slot已经填充好数据，则是SLOT_INPROGRESS
+ *   3. 如果slot上的响应已经被上层处理，则再转为SLOT_IDLE
  */
 enum SlotState {
   SLOT_IDLE,         /** 当前slot可以用于发送消息 */
   SLOT_INPROGRESS,   /** 当前slot正在发送消息和等待响应 */
-  SLOT_NOTWRITE,     /** 虽然这个slot已经注定要写上数据，但是还没有写好数据 */
   SLOT_OTHER
 };
 
@@ -524,9 +522,8 @@ private:
 
     /** 
      * 由于分片机制，检查node_idx号node是否可以用于发送数据。若slot有100个，是0 - 99，
-     * 若rear是99，segment_num是2，则需要等到rear到end的空间足够存放数据为止，而不是用99, 0号slot来发送。
+     * 若rear是99，segment_num是2，则需要用99, 0号slot来发送，只是消息有些不连续了，服务端需要处理这个情况
      * 若可以的话，则将send_content中的内容填充到对应的slot中。
-     * 注意：若成功返回，则调用者需要负责释放node_idx号的zsend的spinlock。
      * 
      * start_rear: 从start_rear开始填充的数据
      * rear2: 输出参数。如果成功check，则更新后的rear是什么
@@ -583,10 +580,10 @@ private:
      * nowait: 表示是否不需要等待结果，false是默认情况，见ZSend中关于nowait的注释
      */
     template<class T>
-    int postRequest(void *send_content, uint64_t size, void **response, T callback, bool nowait) {
+    int postRequest(void *send_content, int size, void **response, T callback, bool nowait) {
       int ret = 0;
-      uint64_t node_idx;
-      uint64_t rear;
+      int node_idx;
+      int rear;
       ret = this->rrLoadBalanceStrategy(send_content, size, nowait, &node_idx, &rear);
       if (ret != 0) {
         return -1;

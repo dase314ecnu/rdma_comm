@@ -508,44 +508,6 @@ void RdmaClient::Destroy() {
     }
     this->_rdma_queue_pairs = nullptr;
   }
-
-  // if (this->sends != nullptr && this->use_shared_memory == false) {
-  //   for (int i = 0; i < this->node_num; ++i) {
-  //     if (this->sends[i].states != nullptr) {
-  //       delete[] this->sends[i].states;
-  //       this->sends[i].states = nullptr;
-  //     }
-  //     if (this->sends[i].spinlock != nullptr) {
-  //       (void) pthread_spin_destroy(this->sends[i].spinlock);
-  //       delete this->sends[i].spinlock;
-  //       this->sends[i].spinlock = nullptr;
-  //     }
-  //     if (this->sends[i].nowait != nullptr) {
-  //       delete[] this->sends[i].nowait;
-  //       this->sends[i].nowait = nullptr;
-  //     }
-  //   }
-  //   delete[] this->sends;
-  // }
-  // this->sends = nullptr;
-
-  // if (this->awakes != nullptr && this->use_shared_memory == false) {
-  //   for (int i = 0; i < this->node_num; ++i) {
-  //     if (this->awakes[i].sems != nullptr) {
-  //       for (int j = 0; j < this->slot_num + 1; ++j) {
-  //         (void) sem_destroy(&(this->awakes[i].sems[j]));
-  //       }
-  //       delete[] this->awakes[i].sems;
-  //       this->awakes[i].sems = nullptr;
-  //     }
-  //     if (this->awakes[i].done != nullptr) {
-  //       delete[] this->awakes[i].done;
-  //       this->awakes[i].done = nullptr;
-  //     }
-  //   }
-  //   delete[] this->awakes;
-  // }
-  // this->awakes = nullptr;
 }
 
 int RdmaClient::createRdmaQueuePairs() {
@@ -1008,24 +970,24 @@ SharedRdmaClient::~SharedRdmaClient() {
 }
 
 int SharedRdmaClient::Run() {
-  this->send_threads = new pthread_t[this->node_num];
-  uint32_t i = 0;
+  _send_threads = new pthread_t[_node_num];
+  int i = 0;
   SCOPEEXIT([&]() {
-    if (i < this->node_num) {
-      this->stop = true;
+    if (i < _node_num) {
+      _stop = true;
       for (int j = 0; j < i; ++j) {
-        (void) pthread_join(this->send_threads[j], nullptr);
+        (void) pthread_join(_send_threads[j], nullptr);
       }
-      delete[] this->send_threads;
-      this->send_threads = nullptr;
+      delete[] _send_threads;
+      _send_threads = nullptr;
     }
   });
 
-  for (; i < node_num; ++i) {
+  for (; i < _node_num; ++i) {
     Args *args = new Args();
     args->client = this;
     args->node_idx = i;
-    if (pthread_create(send_threads + i, nullptr, this->sendThreadFunEntry, args) != 0) {
+    if (pthread_create(_send_threads + i, nullptr, this->sendThreadFunEntry, args) != 0) {
       return -1;
     }
   }
@@ -1033,24 +995,35 @@ int SharedRdmaClient::Run() {
 }
 
 void SharedRdmaClient::Stop() {
-  this->stop = true;
-  if (this->send_threads == nullptr) {
+  _stop = true;
+  if (_send_threads == nullptr) {
     return;
   }
-  for (int i = 0; i < this->node_num; ++i) {
-    (void) pthread_join(this->send_threads[i], nullptr);
+  for (int i = 0; i < _node_num; ++i) {
+    (void) pthread_join(_send_threads[i], NULL);
   }
-  delete[] this->send_threads;
-  this->send_threads = nullptr;
+  delete[] _send_threads;
+  _send_threads = nullptr;
 }
 
 void SharedRdmaClient::Destroy() {  
   LOG_DEBUG("Start to destroy SharedRdmaClient\n");
 
   this->Stop();
-  pthread_spin_destroy(&(this->start_idx_lock));
 
   RdmaClient::Destroy();
+
+  _sends = nullptr;
+  if (_awakes != nullptr) {
+    for (int i = 0; i < _node_num; ++i) {
+      if (_awakes[i].sems != nullptr) {
+        for (int j = 0; j < _slot_num + 1; ++j)
+          (void) sem_destroy(&(_awakes[i].sems[j]));
+        _awakes[i].sems = nullptr;
+      }
+    }
+    _awakes = nullptr;
+  }
 
   LOG_DEBUG("End to destroy SharedRdmaClient");
 }
@@ -1092,11 +1065,15 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
       zsend->notsent_rear  = rear2;
       zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
       
-      (void) pthread_spin_unlock(zsend->spinlock);
       
-      rc = send(this->listen_fd[i * 2], &c, 1, 0); 
-      if (rc <= 0) {
-        return -1;
+      std::atomic_thread_fence(std::memory_order_seq_cst);
+      if (USE_BUSY_POLLING) {
+        zsend->has_unsent_data.store(1);
+      } else {
+        rc = send(_listen_fd[i * 2], &c, 1, 0); 
+        if (rc <= 0) {
+          return -1;
+        }
       }
 
       if (out_node_idx) {
@@ -1110,103 +1087,106 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, b
   }
 }
 
-/* @todo: 字节对齐 */
-int SharedRdmaClient::getNeededSegmentNum(uint64_t size) {
+int SharedRdmaClient::getNeededSegmentNum(int size) {
   int num = 0;
-  uint64_t left_size = size;
+  int left_size = size;
   do {
     num++;
-    if (left_size + sizeof(SlotMeta) <= this->slot_size) {
+    if (left_size + sizeof(SlotMeta) <= _slot_size) {
       left_size = 0;
       break;
     } else {
-      left_size -= (this->slot_size - sizeof(SlotMeta));
+      left_size -= (_slot_size - sizeof(SlotMeta));
     }
   } while (true);
   return num;
 }
 
-bool SharedRdmaClient::checkNodeCanSend(uint64_t node_idx, void *send_content, uint64_t size, 
-        uint64_t *start_rear, uint64_t *rear2) {
-  ZSend  *zsend = &this->sends[node_idx];
-  ZAwake *zawake = &this->awakes[node_idx];
+bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int size, 
+            int *start_rear, int *rear2) {
+  ZSend  *zsend = &(_sends[node_idx].zsend);
+  ZAwake *zawake = &_awakes[node_idx];
   int segment_num = this->getNeededSegmentNum(size);
-  uint64_t free_seg = 0;
-
-  (void) pthread_spin_lock(zsend->spinlock);
-
-  /** 
-   * 若rear到end的空间不足以存放消息，则需要看front和rear是否相等，若相等，
-   * 则可以将front, rear等都设置为0。
-   */
-  if (this->slot_num + 1 - zsend->rear < segment_num) {
-    if (zsend->front == zsend->rear) {
-      zsend->front = zsend->rear = zsend->notsent_front = zsend->notsent_rear = 0;
-    } else {
-      (void) pthread_spin_unlock(zsend->spinlock);
-      return false;
-    }
-  } 
+  int free_seg = 0;
+  int ret = -1;
   
-  /* 到此为止，已经确保rear到end的空间是足够存放消息的。现在看可用空间是否足够 */
-  if (zsend->front <= zsend->rear) {
-    free_seg = (this->slot_num + 1 - zsend->rear) + zsend->front;
-  } else {
-    free_seg = zsend->front - zsend->rear;
+  /* 看可用空间是否足够，只有足够了，才能够去填充数据到slot中 */
+  int old_free_slot_num = zsend->free_slot_num.load();
+  while (old_free_slot_num < segment_num) {
+    int new_free_slot_num = old_free_slot_num - segment_num;
+    if (zsend->free_slot_num.compare_exchange_weak(old_free_slot_num, new_free_slot_num, std::memory_order_seq_cst)) {
+      ret = 0;
+      break;
+    }
   }
-
-  if (segment_num < free_seg) {
-    if (rear2) {
-      *rear2 = (zsend->rear + segment_num) % (this->slot_num + 1);
-    }
-    // 将send_content中的数据填充到slot中
-    uint64_t start_slot_idx = zsend->rear;
-    if (start_rear) {
-      *start_rear = start_slot_idx;
-    }
-    uint64_t left_size = size;
-    bool first = true;
-    char *content = (char *)send_content;
-    while (left_size > 0) {
-      char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
-              + start_slot_idx * this->slot_size;
-      SlotMeta *meta = (SlotMeta *)buf;
-      buf += sizeof(SlotMeta);
-      if (left_size + sizeof(SlotMeta) <= this->slot_size) {
-        memcpy(buf, content, left_size);
-        content += left_size;
-        meta->size = left_size + sizeof(SlotMeta);
-        left_size = 0;
-      } else {
-        memcpy(buf, content, this->slot_size - sizeof(SlotMeta));
-        left_size -= (this->slot_size - sizeof(SlotMeta));
-        content += (this->slot_size - sizeof(SlotMeta));
-        meta->size = this->slot_size;
-      }
-      if (first) {
-        if (left_size == 0) {
-          meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL;
-        } else {
-          meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST;
-        }
-        first = false;
-      } else {
-        if (left_size == 0) {
-          meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_LAST;
-        } else {
-          meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_MORE;
-        }
-      }
-      start_slot_idx = start_slot_idx + 1;
-    }
-    return true;
-  } else {
-    (void) pthread_spin_unlock(zsend->spinlock);
+  if (ret != 0) {
     return false;
   }
+
+  // std::atomic_thread_fence(std::memory_order_seq_cst);
+
+  /**
+   * 更新zsend->notwrite_rear
+   * 这个时候已经有n个进程更新free_slot_num成功了，也就是能够去填充数据到slot中，
+   * 这n个进程去竞争修改notwrite_rear，也就是决定了它们谁先发送，谁后发送的问题，
+   * 不过最终一定会修改成功。
+   */
+  int old_notwrite_rear = zsend->notwrite_rear.load();
+  int new_notwrite_rear;
+  do {
+    new_notwrite_rear = (old_notwrite_rear + segment_num) % (_slot_num + 1);
+  } while (!zsend->notwrite_rear.compare_exchange_weak(old_notwrite_rear, new_notwrite_rear, std::memory_order_seq_cst));
+
+  if (rear2) {
+    *rear2 = new_notwrite_rear;
+  }
+
+  /** 将send_content中的数据填充到slot中 */
+  int start_slot_idx = old_notwrite_rear;
+  if (start_rear) {
+    *start_rear = start_slot_idx;
+  }
+  int left_size = size;
+  bool first = true;
+  char *content = (char *)send_content;
+  while (left_size > 0) {
+    char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
+            + start_slot_idx * _slot_size;
+    SlotMeta *meta = (SlotMeta *)buf;
+    buf += sizeof(SlotMeta);
+    if (left_size + sizeof(SlotMeta) <= _slot_size) {
+      memcpy(buf, content, left_size);
+      content += left_size;
+      meta->size = left_size + sizeof(SlotMeta);
+      left_size = 0;
+    } else {
+      memcpy(buf, content, _slot_size - sizeof(SlotMeta));
+      left_size -= (_slot_size - sizeof(SlotMeta));
+      content += (_slot_size - sizeof(SlotMeta));
+      meta->size = _slot_size;
+    }
+    if (first) {
+      if (left_size == 0) {
+        meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL;
+      } else {
+        meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST;
+      }
+      first = false;
+    } else {
+      if (left_size == 0) {
+        meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_LAST;
+      } else {
+        meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_MORE;
+      }
+    }
+    zsend->states[start_slot_idx].store(SLOT_INPROGRESS);
+    start_slot_idx = (start_slot_idx + 1) % (_slot_num + 1);
+  }
+
+  return true;
 }
 
-void SharedRdmaClient::WaitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response) {
+void SharedRdmaClient::WaitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response) {
   this->waitForResponse(zsend, zawake, buf, rear, response, nullptr);
 }
 
