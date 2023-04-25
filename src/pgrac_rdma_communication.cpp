@@ -1028,48 +1028,44 @@ void SharedRdmaClient::Destroy() {
   LOG_DEBUG("End to destroy SharedRdmaClient");
 }
 
-int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, uint64_t size, bool nowait, 
-            uint64_t *out_node_idx, uint64_t *out_rear)
+int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, int size, bool nowait, 
+            int *out_node_idx, int *out_rear)
 {
   char c;
   int  rc = 0;
 
   int start = 0;
-  /** 
-   * 采用round robin法来实现负载均衡
-   */
-  pthread_spin_lock(&(this->start_idx_lock));
-  start = this->start_idx;
-  this->start_idx = (this->start_idx + 1) % this->node_num;
-  pthread_spin_unlock(&(this->start_idx_lock));
+  /** 采用round robin法来实现负载均衡 */
+  int old_start_idx = _start_idx.load();
+  int new_start_idx;
+  do {
+    new_start_idx = (old_start_idx + 1) % _node_num;
+  } while (!_start_idx.compare_exchange_weak(old_start_idx, new_start_idx, std::memory_order_seq_cst));
+  start = old_start_idx;
 
   while (true) {
-    for (int j = 0; j < this->node_num; ++j) {
-      int i = (start + j) % this->node_num;  // 考虑i号node是否可以用于发送
-      ZSend  *zsend = &this->sends[i];
-      ZAwake *zawake = &this->awakes[i];
-      uint64_t rear = 0;
+    for (int j = 0; j < _node_num; ++j) {
+      int i = (start + j) % _node_num;  // 考虑i号node是否可以用于发送
+      ZSend  *zsend = &(_sends[i].zsend);
+      ZAwake *zawake = &_awakes[i];
       
-      uint64_t start_rear;
-      uint64_t rear2;
+      int start_rear;
+      int rear2;
       if (this->checkNodeCanSend(i, send_content, size, &start_rear, &rear2) == false) {
         continue;
       }
 
-      rear                = zsend->rear;
-      for (uint64_t k = start_rear; k != rear2; k = (k + 1) % (this->slot_num + 1)) {
-        zsend->states[k] = SlotState::SLOT_INPROGRESS;
+      zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (_slot_num + 1 - start_rear + rear2));
+      for (int k = start_rear; k != rear2; k = (k + 1) % (_slot_num + 1)) {
         zsend->nowait[k] = nowait;
       }
-      zsend->rear          = rear2;
-      zsend->notsent_rear  = rear2;
-      zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (this->slot_num + 1 - start_rear));
-      
+      for (int k = start_rear; k != rear2; k = (k + 1) % (_slot_num + 1)) {
+        zsend->states[k].store(SLOT_INPROGRESS);
+      }
       
       std::atomic_thread_fence(std::memory_order_seq_cst);
-      if (USE_BUSY_POLLING) {
-        zsend->has_unsent_data.store(1);
-      } else {
+      zsend->has_unsent_data.store(1);
+      if (!USE_BUSY_POLLING) {
         rc = send(_listen_fd[i * 2], &c, 1, 0); 
         if (rc <= 0) {
           return -1;
@@ -1179,7 +1175,7 @@ bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int si
         meta->slot_segment_type = SlotSegmentType::SLOT_SEGMENT_TYPE_MORE;
       }
     }
-    zsend->states[start_slot_idx].store(SLOT_INPROGRESS);
+    // zsend->states[start_slot_idx].store(SLOT_INPROGRESS);
     start_slot_idx = (start_slot_idx + 1) % (_slot_num + 1);
   }
 

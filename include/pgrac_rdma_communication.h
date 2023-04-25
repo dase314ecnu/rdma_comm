@@ -536,9 +536,10 @@ private:
      * callback是处理响应的可调用对象，它的参数只能是一个：void *。也就是需要这样调用它：callback(buf)
      * 如果callback为空，则需要将buf复制到上层，让上层去处理。
      * 建议传递binder对象到callback中
+     * rear: backend从rear开始的很多slot存储着要发送的消息，因此rear也是响应到来的那个slot
      */
     template<class T>
-    void waitForResponse(ZSend  *zsend, ZAwake *zawake, char *buf, uint64_t rear, void **response, T callback) {
+    void waitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response, T callback) {
       if (!USE_BACKEND_BUSY_POLLING) {
         (void) sem_wait(&(zawake->sems[rear]));
       } else {
@@ -547,9 +548,10 @@ private:
       }
       
       if constexpr (std::is_same<T, decltype(nullptr)>::value) {
-        // 此时response必不能为空
-        // 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
-        // 响应中的前四个字节必定是长度字段
+        /** 此时response必不能为空
+         * 响应内容得到后，需要将它传递给上层，然后便更新zsend中的一些元信息
+         * 响应中的前四个字节必定是长度字段
+         */
         int length = MessageUtil::parseLength2(buf);
         *response = malloc(length);
         memcpy(*response, buf, length);
@@ -557,23 +559,11 @@ private:
         callback(buf);
       }
 
-      // 更新zsend中的一些元信息，也就是推进zsend->front
-      (void) pthread_spin_lock(zsend->spinlock);
+      /** 更新zsend中的一些元信息 */
       for (int k = 0; k < zsend->segment_nums[rear]; ++k) {
-        uint64_t p = (rear + k) % (this->slot_num + 1);
-        zsend->states[p] = SlotState::SLOT_IDLE;
+        int p = (rear + k) % (_slot_num + 1);
+        zsend->states[p].store(SlotState::SLOT_IDLE);
       }
-
-      if (rear == zsend->front) {
-        uint64_t p = rear;
-        while (p != zsend->notsent_front
-                && zsend->states[p] == SlotState::SLOT_IDLE) 
-        {
-          p = (p + 1) % (this->slot_num + 1);
-        }
-        zsend->front = p;
-      }
-      (void) pthread_spin_unlock(zsend->spinlock);
     }
     
     /** 
