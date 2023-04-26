@@ -34,7 +34,7 @@ void MemoryAllocator::init(char *memory, size_t size) {
   uintptr_t scratch = reinterpret_cast<uintptr_t>(memory);
   uintptr_t scratch_aligned = this->alignedSize(scratch, CACHE_LINE_SIZE);
   uintptr_t offset = scratch_aligned - scratch;
-  if (offset >= _size) {
+  if (offset >= size) {
     throw std::bad_exception();
   }
   _memory = memory + offset;
