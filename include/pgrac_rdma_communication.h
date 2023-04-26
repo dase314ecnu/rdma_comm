@@ -432,7 +432,7 @@ public:
   /** Destroy all the resources of the SharedRdmaClient */
   void Destroy();
 
-  void WaitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response);
+  void WaitForResponse(int node_idx, int rear, void **response);
 
   /** 
    * 调用SharedRdmaClient的发送消息的接口，返回内容放在response中。
@@ -451,18 +451,18 @@ public:
    */
   auto AsyncPostRequest(void *send_content, int size, int* ret) 
       -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
-      (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1));
+      int(0), (int)(0), std::placeholders::_1));
   
   /** 
    * 和AsyncPostRequest()类似，是个纯异步的api。但是上层不需要等待结果
    */
   void AsyncPostRequestNowait(void *send_content, int size, int *ret);
 
-  /** 
-   * 和AsyncPostRequest()类似，是个纯异步的api。但是上层不需要等待结果，只需要传递callback到下层
-   */
-  template<class T>
-  void AsyncPostRequestNowait(void *send_content, int size, int *ret, T callback);
+  // /** 
+  //  * 和AsyncPostRequest()类似，是个纯异步的api。但是上层不需要等待结果，只需要传递callback到下层
+  //  */
+  // template<class T>
+  // void AsyncPostRequestNowait(void *send_content, int size, int *ret, T callback);
   
   /** 计算SharedRdmaClient需要多少字节的共享内存空间来创建对象，包括SharedRdmaClient本身
    * 以及需要共享的数据的总大小。
@@ -612,78 +612,14 @@ private:
  */
 template<typename T>
 class RdmaServer {
-    struct Args {
-        uint32_t node_idx = 0;  // 小于compute_num * node_num
-        RdmaServer<T> *server = nullptr;
-    };
-
-protected:
-    uint32_t           compute_num = 0;  // 计算机器的个数
-    uint32_t           node_num = 0;   // 对应每个来连接的计算节点，分配node_num个接收器
-    uint64_t           slot_size = 0;
-    uint64_t           slot_num = 0;
-    /** 
-     * 用于发送任务请求。
-     * compute_num * node_num长度。rdma_queue_paris[i]负责和i / compute_num号机器
-     * 上的i % compute_num号node进行通信。
-     */
-    RdmaQueuePair     **rdma_queue_pairs = nullptr; 
-    /** 
-     * locks[i]保护对rdma_queue_paris[i]的访问。
-     * 监听线程要随时初始化rdma_queue_pairs[i]，同时i号工作线程要检查并坚挺rdma_queue_pairs[i]，
-     * 因此需要锁的保护。
-     * compute_num * node_num长度
-     */
-    pthread_spinlock_t *locks = nullptr;
-    
-    uint32_t    local_port = 0;   // 监听线程的监听端口
-    std::thread **receive_threads = nullptr; // compute_num * node_num长度
-    std::thread  *listen_thread = nullptr;   // 监听线程，用于处理来自其他计算节点的连接请求
-
-    T   *worker_threadpool = nullptr;   // 业务处理线程池
-    volatile bool stop = false;         // 线程是否停止接收请求
-
-protected:
-    /** 
-     * 不断监听local_port端口，看是否有连接请求到来，并进行处理。
-     * 第i个机器的第j个请求到来时，这第j个请求的远程node就被标记为j号node，
-     * 同时rdma_queue_pairs[i * compute_num + j]进行初始化，以负责和这个远程node通信。
-     */
-    void listenThreadFun();
-    static void *listenThreadFunEntry(void *arg);
-    /** 
-     * 不断监听rdma_queue_pairs[i]，看是否有请求到来，并进行处理。
-     * @param node_idx: 小于compute_num * node_num
-     */
-    void receiveThreadFun(uint32_t node_idx);
-    static void *receiveThreadFunEntry(void *arg);
-    /** 
-     * @param compute_id: 本节点的节点号
-     * @param meta      : 本节点的QueuePairMeta信息
-     * @param remote_compute_id : 对端节点的节点号
-     * @param remote_meta       : 对端节点的QueuePairMeta信息
-     * @return  0: 成功  -1: 出现异常
-     * 交换信息的时候，要考虑到大小端转换的问题，虽然没有这一步也大概率没事。
-     */
-    int  dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
-            uint32_t &remote_compute_id, QueuePairMeta &remote_meta);
-    
-    /** 
-     * 由于分片机制：
-     * 将last_head到slot_idx号slot之间的所有分片都合并在一起，合并后的消息的首地址在
-     * last_head号slot的sizeof(SlotMeta)偏移处。
-     * 注意：确保last_head到slot_idx号slot确实是一个消息的分片
-     */
-    void mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx, uint32_t node_idx);
-
 public:
     /** 
      * 初始化各个类成员属性。
      * 为rdma_queue_pairs和receive_threads分配内存空间。
      * 初始化locks
      */
-    RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
-            uint32_t _port, T *_worker_threadpool);
+    RdmaServer(int compute_num, int node_num, int slot_size, int slot_num, 
+            uint32_t port, T *_worker_threadpool);
     ~RdmaServer();
     /** 
      * 开启一个监听线程和多个接收线程, 监听线程接收到RdmaClient的连接请求后，
@@ -701,9 +637,81 @@ public:
      * 服务器发送响应之后，客户端才可以释放对应slot的锁，因此PostResponse()时，必定不会在同一个slot
      * 中到来消息，因此不用考虑并发的问题。
      * @param node_idx: 小于compute_num * node_num
-     * @param response: reponse的长度比定小于等于slot_size
+     * @param response: reponse的长度必定小于等于slot_size
      */
-    int PostResponse(uint64_t node_idx, uint64_t slot_idx, void *response);
+    int PostResponse(int node_idx, int slot_idx, void *response);
+
+private:
+    struct Args {
+        int node_idx = 0;  // 小于compute_num * node_num
+        RdmaServer<T> *server = nullptr;
+    };
+
+private:
+    int           compute_num = 0;  // 计算机器的个数
+    int           node_num = 0;   // 对应每个来连接的计算节点，分配node_num个接收器
+    int           slot_size = 0;
+    int           slot_num = 0;
+    /** 
+     * 用于发送任务请求。
+     * compute_num * node_num长度。rdma_queue_paris[i]负责和i / compute_num号机器
+     * 上的i % compute_num号node进行通信。
+     */
+    RdmaQueuePair     **rdma_queue_pairs = nullptr; 
+    /** 
+     * locks[i]保护对rdma_queue_paris[i]的访问。
+     * 监听线程要随时初始化rdma_queue_pairs[i]，同时i号工作线程要检查并坚挺rdma_queue_pairs[i]，
+     * 因此需要锁的保护。
+     * compute_num * node_num长度
+     */
+    pthread_spinlock_t *locks = nullptr;
+    
+    /** shadow_pool的长度是compute_num*node_num，每个元素是一个长度为slot_size*slot_num的内存池
+     * 这里用于存储在注册内存中不连续的大消息
+     */
+    char **shadow_pool = nullptr;
+    
+    uint32_t    local_port = 0;   // 监听线程的监听端口
+    std::thread **receive_threads = nullptr; // compute_num * node_num长度
+    std::thread  *listen_thread = nullptr;   // 监听线程，用于处理来自其他计算节点的连接请求
+
+    T   *worker_threadpool = nullptr;   // 业务处理线程池
+    volatile bool stop = false;         // 线程是否停止接收请求
+
+private:
+    /** 
+     * 不断监听local_port端口，看是否有连接请求到来，并进行处理。
+     * 第i个机器的第j个请求到来时，这第j个请求的远程node就被标记为j号node，
+     * 同时rdma_queue_pairs[i * compute_num + j]进行初始化，以负责和这个远程node通信。
+     */
+    void listenThreadFun();
+    static void *listenThreadFunEntry(void *arg);
+    /** 
+     * 不断监听rdma_queue_pairs[i]，看是否有请求到来，并进行处理。
+     * @param node_idx: 小于compute_num * node_num
+     */
+    void receiveThreadFun(int node_idx);
+    static void *receiveThreadFunEntry(void *arg);
+    /** 
+     * @param compute_id: 本节点的节点号
+     * @param meta      : 本节点的QueuePairMeta信息
+     * @param remote_compute_id : 对端节点的节点号
+     * @param remote_meta       : 对端节点的QueuePairMeta信息
+     * @return  0: 成功  -1: 出现异常
+     * 交换信息的时候，要考虑到大小端转换的问题，虽然没有这一步也大概率没事。
+     */
+    int  dataSyncWithSocket(int sock, int compute_id, const QueuePairMeta& meta,
+            int &remote_compute_id, QueuePairMeta &remote_meta);
+    
+    /** 
+     * 由于分片机制：
+     * 将last_head到slot_idx号slot之间的所有分片都合并在一起，合并后的消息的首地址在
+     * last_head号slot的sizeof(SlotMeta)偏移处。
+     * 注意：确保last_head到slot_idx号slot确实是一个消息的分片
+     */
+    void mergeMultipleSegments(int last_head, int slot_idx, int node_idx);
+    void mergeMultipleSegments2(int last_head, int slot_idx, int node_idx, char *dest_buf);
+    void mergeAndMoveMultipleSegments(int last_head, int slot_idx, int node_idx);
 };
 
 /** 
@@ -711,6 +719,137 @@ public:
  * RdmaServer 实现
  * ----------------------------------------------------------------------------------------------
  */
+
+template<typename T>
+RdmaServer<T>::RdmaServer(int compute_num, int node_num, int slot_size, int slot_num, 
+        uint32_t port, T *worker_threadpool) 
+        : compute_num(compute_num), node_num(node_num), slot_size(slot_size), slot_num(slot_num), 
+          local_port(port), worker_threadpool(worker_threadpool)
+{
+  LOG_DEBUG("RdmaServer Start to construct RdmaServer");
+
+  int cnt = this->compute_num * this->node_num;
+  this->rdma_queue_pairs = new RdmaQueuePair*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->rdma_queue_pairs[i] = nullptr;
+  }
+  this->locks = new pthread_spinlock_t[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    if (pthread_spin_init(&(this->locks[i]), 0) != 0) {
+      throw std::bad_exception();
+    }
+  }
+
+  this->receive_threads = new std::thread*[cnt];
+  for (int i = 0; i < cnt; ++i) {
+    this->receive_threads[i] = nullptr;
+  }
+
+  this->shadow_pool = (char **)malloc(sizeof(char *) * this->compute_num * this->node_num);
+  for (int i = 0; i < this->compute_num * this->node_num; ++i) {
+    this->shadow_pool[i] = (char *)malloc(this->slot_num * this->slot_size);
+  }
+
+  LOG_DEBUG("RdmaServer Success to construct RdmaServer: compute_num=%d, node_num=%d, "
+          "slot_size=%d, slot_num=%d, listen_port=%u", this->compute_num, this->node_num,
+          this->slot_size, this->slot_num, this->local_port);
+}
+
+template<typename T>
+RdmaServer<T>::~RdmaServer() {
+  LOG_DEBUG("RdmaServer start to deconstruct");
+
+  this->Stop();
+  
+  if (this->rdma_queue_pairs != nullptr) {
+    for (int i = 0; i < this->compute_num * this->node_num; ++i) {
+      if (this->rdma_queue_pairs[i] != nullptr) {
+        delete this->rdma_queue_pairs[i];
+        this->rdma_queue_pairs[i] = nullptr;
+      }
+    }
+    delete[] this->rdma_queue_pairs;
+    this->rdma_queue_pairs = nullptr;
+  }
+  if (this->locks != nullptr) {
+    delete[] this->locks;
+    this->locks = nullptr;
+  }
+
+  for (int i = 0; i < this->compute_num * this->node_num; ++i) {
+    free(this->shadow_pool[i]);
+    this->shadow_pool[i] = nullptr;
+  } 
+  free(this->shadow_pool);
+  this->shadow_pool = nullptr;
+
+  LOG_DEBUG("RdmaServer success to deconstruct, all resources including RDMA have been released");
+}
+
+template<typename T>
+int RdmaServer<T>::Run() {
+  LOG_DEBUG("Start to run RdmaServer");
+
+  int cnt = this->compute_num * this->node_num;
+
+  Args *arg_listen = new Args();
+  arg_listen->server = this;
+  try {
+    this->listen_thread = new std::thread(RdmaServer<T>::listenThreadFunEntry, arg_listen);
+  } catch (...) {
+    return -1;
+  }
+
+  for (int i = 0; i < cnt; ++i) {
+    Args *arg_receive = new Args();
+    arg_receive->node_idx = i;
+    arg_receive->server = this;
+    try {
+      this->receive_threads[i] = new std::thread(RdmaServer<T>::receiveThreadFunEntry, arg_receive);
+    } catch (...) {
+      return -1;
+    }
+  }
+
+  LOG_DEBUG("Success to run RdmaServer: launched one listen_thread, %d receive_threads", cnt);
+
+  return 0;
+}
+
+template<typename T>
+void RdmaServer<T>::Stop() {
+  LOG_DEBUG("RdmaServer start to stop all threads");
+
+  this->stop = true;
+  this->listen_thread->join();
+  delete this->listen_thread;
+  this->listen_thread = nullptr;
+
+  for (int i = 0; i < this->compute_num * this->node_num; ++i)
+  {
+    this->receive_threads[i]->join();
+    delete this->receive_threads[i];
+    this->receive_threads[i] = nullptr;
+  }
+  delete[] this->receive_threads;
+  this->receive_threads = nullptr;
+
+  LOG_DEBUG("RdmaServer success to stop all threads");
+}
+
+template<typename T>
+int RdmaServer<T>::PostResponse(int node_idx, int slot_idx, void *response) {
+  if (response == nullptr) {
+    return -1;
+  }
+  RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
+  int length = MessageUtil::parseLength2(response);
+  if (length < 4) {
+    return -1;
+  }
+  qp->SetSendContent(response, length, slot_idx);
+  return qp->PostSend(slot_idx, slot_idx, length);
+}
 
 template<typename T>
 void RdmaServer<T>::listenThreadFun() {
@@ -736,7 +875,7 @@ void RdmaServer<T>::listenThreadFun() {
   assert(bind(sock, (struct sockaddr*)&my_address, sizeof(struct sockaddr)) >= 0);
   assert(listen(sock, this->compute_num * this->node_num) >= 0);  // 最多只会有这么多个连接到来
 
-  LOG_DEBUG("RdmaServer listen thread, is listening connection, listen_port=%d", local_port);
+  LOG_DEBUG("RdmaServer listen thread, is listening connection, listen_port=%u", local_port);
 
   // 开始接收连接
   while (!this->stop) {
@@ -764,8 +903,8 @@ void RdmaServer<T>::listenThreadFun() {
 
     QueuePairMeta meta;
     QueuePairMeta remote_meta;
-    uint32_t      compute_id = MY_COMPUTE_ID;
-    uint32_t      remote_compute_id;     
+    int      compute_id = MY_COMPUTE_ID;
+    int      remote_compute_id;     
     qp->GetLocalQPMetaData(meta);
     rc = this->dataSyncWithSocket(connfd, compute_id, meta, remote_compute_id, 
             remote_meta);
@@ -805,7 +944,7 @@ void* RdmaServer<T>::listenThreadFunEntry(void *arg) {
 
 // 这里node_idx
 template<typename T>
-void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
+void RdmaServer<T>::receiveThreadFun(int node_idx) {
   LOG_DEBUG("RdmaServer receive thread of %u, start to wait rdma connection to be set", node_idx);
   
   // 统计信息，接收请求的数量
@@ -818,7 +957,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
       delete waitset; 
       waitset = nullptr;
     }
-    LOG_DEBUG("RdmaServer receive thread of %u, stop working, have received %lu requests", 
+    LOG_DEBUG("RdmaServer receive thread of %d, stop working, have received %lu requests", 
           node_idx, receive_cnt);
   });
   
@@ -840,17 +979,13 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
     break;
   }
 
-  if (this->stop) {
-    return;
-  }
-
   if (waitset->addFd(this->rdma_queue_pairs[node_idx]->GetChannel()->fd) != 0) {
-    LOG_DEBUG("RdmaServer receive thread of %u, failed to add channel fd of %d to waitset", 
+    LOG_DEBUG("RdmaServer receive thread of %d, failed to add channel fd of %d to waitset", 
             node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
     return;
   }
 
-  LOG_DEBUG("RdmaServer receive thread of %u, success to add channel fd of %d to waitset"
+  LOG_DEBUG("RdmaServer receive thread of %d, success to add channel fd of %d to waitset"
           ", start to wait for requests", node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
   
   /** 
@@ -858,7 +993,7 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
    * 如果遇到了一个slot，他的meta中显示是SLOT_SEGMENT_TYPE_FIRST，则将这个slot的号赋值到last_head中。
    * 如果遇到了一个slot，他的meta中显示是SLOT_SEGMENT_TYPE_LAST，则将这个last_head到这个slot是一个完整的消息。
    */
-  uint32_t last_head;
+  int last_head;
   // 循环等待消息到来，并交给处理线程池中进行处理
   while (!this->stop) {
     int rc;
@@ -892,11 +1027,11 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
       if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
         receive_cnt++;
         
-        uint32_t slot_idx, msg_num = 1;
+        int slot_idx, msg_num = 1;
         if (!USE_GROUP_POST_SEND) {
           slot_idx = wc.imm_data;
         } else {
-          // 使用了组发送机制，则imm_data中包含了起始的slot_idx，以及消息个数msg_num
+          /** 使用了组发送机制，则imm_data中包含了起始的slot_idx，以及消息个数msg_num */
           slot_idx = GET_SLOT_IDX_FROM_IMM_DATA(wc.imm_data);
           msg_num = GET_MSG_NUM_FROM_IMM_DATA(wc.imm_data);
         }
@@ -910,18 +1045,27 @@ void RdmaServer<T>::receiveThreadFun(uint32_t node_idx) {
           SlotMeta *meta = (SlotMeta *)buf;
           if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_NORMAL) {
             buf = buf + sizeof(SlotMeta);
-            // 调用工作线程池的接口，将请求发给工作线程池进行处理
+            /** 调用工作线程池的接口，将请求发给工作线程池进行处理 */
             this->worker_threadpool->Start(buf, node_idx, slot_idx);
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_FIRST) {
             last_head = slot_idx;
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_MORE) {
             // ....
           } else if (meta->slot_segment_type == SlotSegmentType::SLOT_SEGMENT_TYPE_LAST) {
-            this->mergeMultipleSegments(last_head, slot_idx, node_idx);
-            char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
-                    last_head * this->slot_size;
+            /** 如果slot_idx > last_head，则说明这个大消息的分片在缓冲区中是连续的，否则的话，
+             * 这个大消息的分片在last_head到缓冲区末尾，缓冲区头到slot_idx
+             */
+            char *buf;
+            if (slot_idx > last_head) {
+              this->mergeMultipleSegments(last_head, slot_idx, node_idx);
+              char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
+                      last_head * this->slot_size;
+            } else {
+              this->mergeAndMoveMultipleSegments(last_head, slot_idx, node_idx);
+              char *buf = this->shadow_pool[node_idx];
+            }
             buf += sizeof(SlotMeta);
-            // 调用工作线程池的接口，将请求发给工作线程池进行处理
+            /** 调用工作线程池的接口，将请求发给工作线程池进行处理 */
             this->worker_threadpool->Start(buf, node_idx, last_head);
           }
           slot_idx++;
@@ -941,8 +1085,8 @@ void* RdmaServer<T>::receiveThreadFunEntry(void *arg) {
 }
 
 template<typename T>
-int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const QueuePairMeta& meta,
-            uint32_t &remote_compute_id, QueuePairMeta &remote_meta)
+int RdmaServer<T>::dataSyncWithSocket(int sock, int compute_id, const QueuePairMeta& meta,
+            int &remote_compute_id, QueuePairMeta &remote_meta)
 {
   size_t length = 26;
   char *send_buf  = nullptr;
@@ -963,7 +1107,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
     }
   });
 
-  LOG_DEBUG("RdmaServer, compute id of %u, Start to dataSyncWithSocket, remote socket is %d, "
+  LOG_DEBUG("RdmaServer, compute id of %d, Start to dataSyncWithSocket, remote socket is %d, "
           "local_registered_memory=%lu, local_registered_key=%u, local_qp_num=%u, "
           "local_qp_psn=%u, local_lid=%hu", compute_id, sock, meta.registered_memory, 
           meta.registered_key, meta.qp_num, meta.qp_psn, meta.lid);
@@ -1026,7 +1170,7 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
   remote_meta.qp_psn = getUint32();
   remote_meta.lid = getUint16();
 
-  LOG_DEBUG("RdmaServer, compute id of %u, received sync data, remote_compute_id=%u, "
+  LOG_DEBUG("RdmaServer, compute id of %d, received sync data, remote_compute_id=%d, "
           "remote_registered_memory=%lu, remote_registered_key=%u, remote_qp_num=%u, "
           "remote_qp_psn=%u, remote_lid=%hu", compute_id, remote_compute_id, remote_meta.registered_memory,
           remote_meta.registered_key, remote_meta.qp_num, remote_meta.qp_psn, remote_meta.lid);
@@ -1054,10 +1198,15 @@ int RdmaServer<T>::dataSyncWithSocket(int sock, uint32_t compute_id, const Queue
 }
 
 template<typename T>
-void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx, uint32_t node_idx) {
+void RdmaServer<T>::mergeMultipleSegments(int last_head, int slot_idx, int node_idx) {
   char *dest_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
           (last_head + 1) * this->slot_size;
-  for (uint32_t k = last_head + 1; ; k = (k + 1) % (this->slot_num + 1)) {
+  this->mergeMultipleSegments2(last_head, slot_idx, node_idx, dest_buf);
+}
+
+template<typename T>
+void RdmaServer<T>::mergeMultipleSegments2(int last_head, int slot_idx, int node_idx, char *dest_buf) {
+  for (int k = last_head + 1; ; k = (k + 1) % (this->slot_num + 1)) {
     char *src_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
           k * this->slot_size;
     int len = MessageUtil::parsePacketLength(src_buf) - sizeof(SlotMeta);
@@ -1071,129 +1220,15 @@ void RdmaServer<T>::mergeMultipleSegments(uint32_t last_head, uint32_t slot_idx,
   }
 }
 
-
-/** 
- * @todo: 检查各个输入是否合法，比如_port
- */
 template<typename T>
-RdmaServer<T>::RdmaServer(uint32_t _compute_num, uint32_t _node_num, uint64_t _slot_size, uint64_t _slot_num, 
-        uint32_t _port, T *_worker_threadpool) 
-        : compute_num(_compute_num), node_num(_node_num), slot_size(_slot_size), slot_num(_slot_num), 
-          local_port(_port), worker_threadpool(_worker_threadpool)
-{
-  LOG_DEBUG("RdmaServer Start to construct RdmaServer");
-
-  int cnt = this->compute_num * this->node_num;
-  this->rdma_queue_pairs = new RdmaQueuePair*[cnt];
-  for (int i = 0; i < cnt; ++i) {
-    this->rdma_queue_pairs[i] = nullptr;
-  }
-  this->locks = new pthread_spinlock_t[cnt];
-  for (int i = 0; i < cnt; ++i) {
-    if (pthread_spin_init(&(this->locks[i]), 0) != 0) {
-      throw std::bad_exception();
-    }
-  }
-
-  this->receive_threads = new std::thread*[cnt];
-  for (int i = 0; i < cnt; ++i) {
-    this->receive_threads[i] = nullptr;
-  }
-
-  LOG_DEBUG("RdmaServer Success to construct RdmaServer: compute_num=%lld, node_num=%lld, "
-          "slot_size=%lld, slot_num=%lld, listen_port=%d", this->compute_num, this->node_num,
-          this->slot_size, this->slot_num, this->local_port);
-}
-
-template<typename T>
-RdmaServer<T>::~RdmaServer() {
-  LOG_DEBUG("RdmaServer start to deconstruct");
-
-  this->Stop();
-  
-  if (this->rdma_queue_pairs != nullptr) {
-    for (int i = 0; i < this->compute_num * this->node_num; ++i) {
-      if (this->rdma_queue_pairs[i] != nullptr) {
-        delete this->rdma_queue_pairs[i];
-        this->rdma_queue_pairs[i] = nullptr;
-      }
-    }
-    delete[] this->rdma_queue_pairs;
-    this->rdma_queue_pairs = nullptr;
-  }
-  if (this->locks != nullptr) {
-    delete[] this->locks;
-    this->locks = nullptr;
-  }
-  LOG_DEBUG("RdmaServer success to deconstruct, all resources including RDMA have been released");
-}
-
-/** 
- * @todo: 释放arg_listen等
- */
-template<typename T>
-int RdmaServer<T>::Run() {
-  LOG_DEBUG("Start to run RdmaServer");
-
-  int cnt = this->compute_num * this->node_num;
-
-  Args *arg_listen = new Args();
-  arg_listen->server = this;
-  try {
-    this->listen_thread = new std::thread(RdmaServer<T>::listenThreadFunEntry, arg_listen);
-  } catch (...) {
-    return -1;
-  }
-
-  for (int i = 0; i < cnt; ++i) {
-    Args *arg_receive = new Args();
-    arg_receive->node_idx = i;
-    arg_receive->server = this;
-    try {
-      this->receive_threads[i] = new std::thread(RdmaServer<T>::receiveThreadFunEntry, arg_receive);
-    } catch (...) {
-      return -1;
-    }
-  }
-
-  LOG_DEBUG("Success to run RdmaServer: launched one listen_thread, %d receive_threads", cnt);
-
-  return 0;
-}
-
-template<typename T>
-void RdmaServer<T>::Stop() {
-  LOG_DEBUG("RdmaServer start to stop all threads");
-
-  this->stop = true;
-  this->listen_thread->join();
-  delete this->listen_thread;
-  this->listen_thread = nullptr;
-
-  for (int i = 0; i < this->compute_num * this->node_num; ++i)
-  {
-    this->receive_threads[i]->join();
-    delete this->receive_threads[i];
-    this->receive_threads[i] = nullptr;
-  }
-  delete[] this->receive_threads;
-  this->receive_threads = nullptr;
-
-  LOG_DEBUG("RdmaServer success to stop all threads");
-}
-
-template<typename T>
-int RdmaServer<T>::PostResponse(uint64_t node_idx, uint64_t slot_idx, void *response) {
-  if (response == nullptr) {
-    return -1;
-  }
-  RdmaQueuePair *qp = this->rdma_queue_pairs[node_idx];
-  int length = MessageUtil::parseLength2(response);
-  if (length < 4) {
-    return -1;
-  }
-  qp->SetSendContent(response, length, slot_idx);
-  return qp->PostSend(slot_idx, slot_idx, length);
+void RdmaServer<T>::mergeAndMoveMultipleSegments(int last_head, int slot_idx, int node_idx) {
+  char *dest_buf = this->shadow_pool[node_idx];
+  /** 把last_head号的slot中的内存复制到dest_buf中 */
+  char *src_buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory()
+          + last_head * this->slot_size;
+  memmove(dest_buf, src_buf, this->slot_size);
+  dest_buf += this->slot_size;
+  this->mergeMultipleSegments2(last_head, slot_idx, node_idx, dest_buf);
 }
 
 

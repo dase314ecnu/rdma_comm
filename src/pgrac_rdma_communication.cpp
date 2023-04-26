@@ -763,7 +763,7 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
       if (rc <= 0) {
         continue;
       }
-    }
+    } 
     
     // 返回false表示需要退出整个循环
     auto process_wc = [&]() -> bool {
@@ -827,6 +827,10 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
     };
 
     auto process_send_request = [&]() -> bool {
+      if (send->has_notification.load() == 0) {
+        return true;
+      }
+      
       // 需要发送slot中的数据
       {
         // 先清空pipe中的数据
@@ -1189,38 +1193,37 @@ bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int si
   return true;
 }
 
-void SharedRdmaClient::WaitForResponse(ZSend *zsend, ZAwake *zawake, char *buf, int rear, void **response) {
-  this->waitForResponse(zsend, zawake, buf, rear, response, nullptr);
+void SharedRdmaClient::WaitForResponse(int node_idx, int rear, void **response) {
+  this->waitForResponse(node_idx, rear, response, nullptr);
 }
 
-int SharedRdmaClient::PostRequest(void *send_content, uint64_t size, void **response) {
+int SharedRdmaClient::PostRequest(void *send_content, int size, void **response) {
   return this->postRequest(send_content, size, response, nullptr, false);
 }
 
-auto SharedRdmaClient::AsyncPostRequest(void *send_content, uint64_t size, int* ret) 
+auto SharedRdmaClient::AsyncPostRequest(void *send_content, int size, int* ret) 
     -> decltype(std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), 
-    (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1))
+    int(0), (int)(0), std::placeholders::_1))
 {
 #define ZeroRetValue \
     std::bind(&SharedRdmaClient::WaitForResponse, (SharedRdmaClient *)(nullptr), \
-        (ZSend *)(nullptr), (ZAwake *)(nullptr), (char *)(nullptr), (uint64_t)(0), std::placeholders::_1)
+        int(0), (int)(0), std::placeholders::_1)
   
-  uint64_t node_idx;
-  uint64_t rear;
+  int node_idx;
+  int rear;
   *ret = this->rrLoadBalanceStrategy(send_content, size, false, &node_idx, &rear);
   if (*ret != 0) {
     return ZeroRetValue;
   }
-  ZSend  *zsend = &this->sends[node_idx];
-  ZAwake *zawake = &this->awakes[node_idx];
-  char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
-               + rear * this->slot_size;
-  return std::bind(&SharedRdmaClient::WaitForResponse, this, zsend, zawake, buf, rear,
+  ZSend  *zsend = &(_sends[node_idx].zsend);
+  ZAwake *zawake = &_awakes[node_idx];
+  char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
+               + rear * _slot_size;
+  return std::bind(&SharedRdmaClient::WaitForResponse, this, node_idx, rear,
            std::placeholders::_1);
 }
 
-/* @todo:  AsyncPostRequestNowait()和AsyncPostRequest()有很多相似的代码 */
-void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, uint64_t size, int *ret) {
+void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, int size, int *ret) {
   *ret = this->rrLoadBalanceStrategy(send_content, size, true, nullptr, nullptr);
   return;
 }
