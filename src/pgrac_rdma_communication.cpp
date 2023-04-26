@@ -1255,18 +1255,18 @@ void SharedRdmaClient::AsyncPostRequestNowait(void *send_content, int size, int 
 size_t SharedRdmaClient::GetSharedObjSize(int slot_size, int slot_num, int node_num) 
 {
   size_t size = 0;
-  size += MemoryAllocator::add_size(size, sizeof(RdmaQueuePair *) * node_num, CACHE_LINE_SIZE);
+  size = MemoryAllocator::add_size(size, sizeof(RdmaQueuePair *) * node_num, CACHE_LINE_SIZE);
   for (int i = 0; i < node_num; ++i) {
-    size += MemoryAllocator::add_size(size, sizeof(RdmaQueuePair), 8);
-    size += MemoryAllocator::add_size(size, (size_t)slot_size * (slot_num + 1), CACHE_LINE_SIZE);
+    size = MemoryAllocator::add_size(size, sizeof(RdmaQueuePair), 8);
+    size = MemoryAllocator::add_size(size, (size_t)slot_size * (slot_num + 1), CACHE_LINE_SIZE);
   }
-  size += MemoryAllocator::add_size(size, sizeof(ZSendPad) * node_num, CACHE_LINE_SIZE);
+  size = MemoryAllocator::add_size(size, sizeof(ZSendPad) * node_num, CACHE_LINE_SIZE);
   for (int i = 0; i < node_num; ++i) {
-    size += MemoryAllocator::add_size(size, ZSend::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
+    size = MemoryAllocator::add_size(size, ZSend::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
   }
-  size += MemoryAllocator::add_size(size, sizeof(ZAwake) * node_num, CACHE_LINE_SIZE);
+  size = MemoryAllocator::add_size(size, sizeof(ZAwake) * node_num, CACHE_LINE_SIZE);
   for (int i = 0; i < node_num; ++i) {
-    size += MemoryAllocator::add_size(size, ZAwake::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
+    size = MemoryAllocator::add_size(size, ZAwake::GetSharedObjSize(slot_num), CACHE_LINE_SIZE);
   }
 
   // 多申请一些
