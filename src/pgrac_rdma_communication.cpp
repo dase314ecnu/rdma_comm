@@ -257,10 +257,31 @@ int RdmaQueuePair::modifyQPtoRTS() {
 }
 
 RdmaQueuePair::RdmaQueuePair(int local_slot_num, int local_slot_size, 
+          const char *device_name, uint32_t rdma_port)
+          : local_slot_num(local_slot_num), local_slot_size(local_slot_size), 
+              device_name(device_name), rdma_port(rdma_port)
+{
+  this->use_shared = false;
+  this->local_memory_size = this->local_slot_size * (this->local_slot_num + 1);
+  try {
+    this->local_memory = malloc(this->local_memory_size);
+  } catch(...) {
+    throw std::bad_exception();
+  }
+
+  int rc = this->initializeLocalRdmaResource();
+  if (rc != 0) {
+    this->Destroy();
+    throw std::bad_exception();
+  }
+}
+
+RdmaQueuePair::RdmaQueuePair(int local_slot_num, int local_slot_size, 
             void *_shared_memory, const char *device_name, uint32_t rdma_port)
             : local_slot_num(local_slot_num), local_slot_size(local_slot_size), 
               device_name(device_name), rdma_port(rdma_port)
 {
+  this->use_shared = true;
   // Initialize local memory for the QP to register in MR
   this->local_memory_size = this->local_slot_size * (this->local_slot_num + 1);
   this->local_memory = _shared_memory;

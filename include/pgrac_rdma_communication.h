@@ -87,18 +87,18 @@ typedef struct ZSend {
    * 有backend已经将数据填充到slot中，亟待发送线程去发送。
    */
   union {
-    std::atomic<int> has_notification = 0;  
+    std::atomic<int> has_notification{0};  
     char   pad_for_has_notification[CACHE_LINE_SIZE];
   } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
   /** 剩余free_slot_num个slot没有使用，是available的 */
   union {
-    std::atomic<int> free_slot_num = 0; 
+    std::atomic<int> free_slot_num{0}; 
     char   pad_for_free_slot_num[CACHE_LINE_SIZE];
   } __attribute__ ((aligned(CACHE_LINE_SIZE)));
 
   union {
-    std::atomic<int> notwrite_rear = 0;  /** 所有还未被填充数据的slot的后面 */
+    std::atomic<int> notwrite_rear{0};  /** 所有还未被填充数据的slot的后面 */
     char   pad_for_notwrite_rear[CACHE_LINE_SIZE];
   } __attribute__ ((aligned(CACHE_LINE_SIZE)));
   
@@ -222,6 +222,8 @@ typedef struct ZAwake {
 class RdmaQueuePair{
 public:
   RdmaQueuePair(int local_slot_num, int local_slot_size, 
+          const char *device_name = "mlx5_0", uint32_t rdma_port = 1);
+  RdmaQueuePair(int local_slot_num, int local_slot_size, 
           void *shared_memory, const char *device_name = "mlx5_0", uint32_t rdma_port = 1);
   ~RdmaQueuePair();
   /* 销毁RdmdaQueuePair中创建所有的资源 */
@@ -248,6 +250,7 @@ public:
 public:
 // zhouhuahui test
 // private:
+  bool                    use_shared{false};
   /* local rdma queue pair resources */
   uint32_t                 rdma_port = 0;    //用于rdma查询的端口号: ibv_query_port。一般是1
   const char              *device_name = nullptr;  //设备名称。一般是"mlx5_0"
@@ -489,7 +492,7 @@ public:
      * 每次从start_idx号的node找可以用于发送的node，每次PostRequest后start_idx = (start_idx + 1) % node_num
      */
     union {
-      std::atomic<int> _start_idx = 0;
+      std::atomic<int> _start_idx{0};
       char   pad_for_start_idx[CACHE_LINE_SIZE];
     } __attribute__ ((aligned(CACHE_LINE_SIZE)));
     
@@ -584,9 +587,6 @@ public:
       zsend->has_notification.store(1);
       if (!USE_BUSY_POLLING) {
         rc = send(_listen_fd[node_idx * 2], &c, 1, 0); 
-        if (rc <= 0) {
-          return -1;
-        }
       }
     }
     
@@ -602,11 +602,11 @@ public:
       if (ret != 0) {
         return -1;
       }
-      ZSend  *zsend = &this->sends[node_idx];
-      ZAwake *zawake = &this->awakes[node_idx];
-      char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() 
-                  + rear * this->slot_size;
-      this->waitForResponse(zsend, zawake, buf, rear, response, callback);
+      ZSend  *zsend = &(_sends[node_idx].zsend);
+      ZAwake *zawake = &_awakes[node_idx];
+      char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
+                  + rear * _slot_size;
+      this->waitForResponse(node_idx, rear, response, callback);
       return 0;
     }
 };

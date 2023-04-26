@@ -104,62 +104,7 @@ void TestSimpleServer2Class::runServer() {
 }
 
 void TestSimpleServer2Class::runClient() {
-    std::string remote_ip = SERVER_IP; 
-    int remote_port = 21001;
-    CommonRdmaClient *rdma_client = nullptr;
-    // test_threads用于发起请求
-    std::thread **test_threads = nullptr;
-
-    SCOPEEXIT([&]() {
-        if (test_threads != nullptr) {
-            for (int i = 0; i < this->_num_test_thread; ++i) {
-                if (test_threads[i] != nullptr) {
-                    test_threads[i]->join();
-                }
-                delete test_threads[i];
-                test_threads[i] = nullptr;
-            }
-            delete[] test_threads;
-            test_threads = nullptr;
-        }
-        if (rdma_client != nullptr) {
-            delete rdma_client;
-        }
-
-        LOG_DEBUG("TestSimpleServer2 pass");
-    });
-
-    try
-    {
-        rdma_client = new CommonRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, _node_num);
-    }
-    catch (...)
-    {
-        LOG_DEBUG("TestSimpleServer2 failed, failed to new CommonRdmaClient");
-        return;
-    }
-
-    if (rdma_client->Run() != 0) {
-        LOG_DEBUG("TestSimpleServer2 failed, failed to run CommonRdmaClient");
-    }
-
-    auto func = [&] () {
-        char content[20] = "zhouhuahui";
-        int length = sizeof(int) + strlen(content) + 1;
-        char send_buf[1000];
-        char *pointer = send_buf;
-        memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
-        pointer += sizeof(int);
-        memcpy(pointer, content, strlen(content) + 1);
-        
-        for (int i = 0; i < this->_reqs_per_test_thread; ++i) {
-            rdma_client->PostRequest((void *)send_buf, length);
-        }
-    };
-    test_threads = new std::thread*[_num_test_thread];
-    for (int i = 0; i < _num_test_thread; ++i) {
-        test_threads[i] = new std::thread(func);
-    }
+    
 }
 
 #ifdef TEST_SIMPLE_SERVER2
