@@ -30,12 +30,14 @@ void TestSharedClientClass::runClient() {
     });
     
     myshm = new MySharedMemory(SharedRdmaClient::GetSharedObjSize(_slot_size, 
-            _slot_num, _node_num) + sizeof(int) * 2 * _node_num);
+            _slot_num, _node_num) + sizeof(int) * 2 * _node_num + 100 * CACHE_LINE_SIZE);
     _shared_memory = myshm->GetSharedMemory();
     if (_shared_memory == nullptr) {
         LOG_DEBUG("TestSharedClient failed to create shared memory");
         return;
     }
+    LOG_DEBUG("TestSharedClient: success to create shared memory of %lu KB", myshm->size / 1024);
+
     // 初始化socketpair
     int *listen_fd = (int *)_shared_memory;
     for (int i = 0; i < _node_num; ++i) {
@@ -124,17 +126,18 @@ void TestSharedClientClass::runClient() {
         }
     };
     
-    for (uint32_t i = 0; i < _num_test_thread; ++i) {
-        int ret = fork();
-        assert(ret >= 0);
-        if (ret == 0) {
-            is_father = false;
-            sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
-            rdma_client = (SharedRdmaClient *)_shared_memory;
-            func(i);
-            return;
-        }
-    }
+    // zhouhuahui test
+    // for (uint32_t i = 0; i < _num_test_thread; ++i) {
+    //     int ret = fork();
+    //     assert(ret >= 0);
+    //     if (ret == 0) {
+    //         is_father = false;
+    //         sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
+    //         rdma_client = (SharedRdmaClient *)_shared_memory;
+    //         func(i);
+    //         return;
+    //     }
+    // }
 
     try {
         rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
@@ -146,11 +149,22 @@ void TestSharedClientClass::runClient() {
     if (rdma_client->Run() != 0) {
         LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
     }
-
-    for (uint32_t i = 0; i < _num_test_thread; ++i) {
-        int status;
-        wait(&status);
+    
+    uintptr_t address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs);
+    LOG_DEBUG("rdma_client->_rdma_queue_pairs address: %lu, %8 = %lu", address, address % 8);
+    for (int i = 0; i < _node_num; ++i) {
+        address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs[i]);
+        LOG_DEBUG("rdma->_rdma_queue_pairs[%d] address: %lu, %8 = %lu", i, address, address % 8);
+        address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs[i]->local_memory);
+        LOG_DEBUG("rdma->_rdma_queue_pairs[%d].local_memory address: %lu, %128 = %lu", i, address, address % 128);
     }
+
+    
+    // zhouhuahui test
+    // for (uint32_t i = 0; i < _num_test_thread; ++i) {
+    //     int status;
+    //     wait(&status);
+    // }
 }
 
 #ifdef TEST_SHARED_CLIENT

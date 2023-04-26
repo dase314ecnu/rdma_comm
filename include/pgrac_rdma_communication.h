@@ -133,6 +133,7 @@ typedef struct ZSend {
   ZSend() {}
   
   ZSend(int slot_num, MemoryAllocator *allocator) {
+    this->free_slot_num.store(slot_num);
     try {
       size_t size = sizeof(bool) * (slot_num + 1);
       this->nowait = (bool *)(allocator->alloc(size, CACHE_LINE_SIZE));
@@ -244,7 +245,9 @@ public:
   void GetLocalQPMetaData(QueuePairMetaData &local_data);
   void SetRemoteQPMetaData(QueuePairMetaData &remote_data);
 
-private:
+public:
+// zhouhuahui test
+// private:
   /* local rdma queue pair resources */
   uint32_t                 rdma_port = 0;    //用于rdma查询的端口号: ibv_query_port。一般是1
   const char              *device_name = nullptr;  //设备名称。一般是"mlx5_0"
@@ -305,7 +308,9 @@ public:
   /** Destroy all the resources of RdmaClient */
   void Destroy();
 
-protected:
+public:
+// zhouhuahui test
+// protected:
   /** 用于发送任务请求和接收响应的QP。node_num长度 */
   RdmaQueuePair     **_rdma_queue_pairs = nullptr;
   MemoryAllocator    *_allocator = nullptr;
@@ -476,7 +481,9 @@ private:
         SharedRdmaClient *client = nullptr;
     };
 
-private:
+public:
+// zhouhuahui test
+// private:
     /** 
      * 用于RoundRobin算法
      * 每次从start_idx号的node找可以用于发送的node，每次PostRequest后start_idx = (start_idx + 1) % node_num
@@ -503,7 +510,9 @@ private:
     ZSendPad      *_sends = nullptr;        // node_num长度
     ZAwake     *_awakes = nullptr;       // node_num长度
 
-private:
+public:
+// zhouhuahui test
+// private:
     /** 发送线程执行的代码 */
     void sendThreadFun(int node_idx);
     static void *sendThreadFunEntry(void *arg);
@@ -607,8 +616,6 @@ private:
  * 负责接收来自己多个计算节点的消息，并分配工作线程来处理。
  * 远程的RDMA Write的imm_data字段会保存slot的号，因此RdmaServer可以直接知道从哪个slot中读取消息
  * @parma T: 业务处理线程池的实现
- * 
- * @todo: RdmaServer要聚合T, T中要聚合RdmaClient和RdmaServer. T含有Start()接口，用于业务处理.
  */
 template<typename T>
 class RdmaServer {

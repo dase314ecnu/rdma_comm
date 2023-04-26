@@ -8,7 +8,9 @@
 #include "sys/shm.h"
 
 class MySharedMemory {
-private:
+public:
+// zhouhuahui test
+// private:
   int     shmid = 0;
   key_t   key = 0;
   char   *shmadd = nullptr;
