@@ -322,6 +322,9 @@ void RdmaQueuePair::Destroy() {
     ibv_close_device(this->ctx);
     this->ctx = nullptr;
   }
+  if (!this->use_shared) {
+    free(this->local_memory);
+  }
   this->local_memory = nullptr;
 }
 

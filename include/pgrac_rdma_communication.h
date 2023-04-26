@@ -986,6 +986,10 @@ void RdmaServer<T>::receiveThreadFun(int node_idx) {
     break;
   }
 
+  if (this->stop) {
+    return;
+  }
+
   if (waitset->addFd(this->rdma_queue_pairs[node_idx]->GetChannel()->fd) != 0) {
     LOG_DEBUG("RdmaServer receive thread of %d, failed to add channel fd of %d to waitset", 
             node_idx, this->rdma_queue_pairs[node_idx]->GetChannel()->fd);
