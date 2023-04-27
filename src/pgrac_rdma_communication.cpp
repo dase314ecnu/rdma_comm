@@ -971,7 +971,7 @@ void* SharedRdmaClient::sendThreadFunEntry(void *arg) {
 }
 
 SharedRdmaClient::SharedRdmaClient(int slot_size, int slot_num, std::string remote_ip, uint32_t remote_port, 
-          int node_num, void* shared_memory, int *listend_fd)
+          int node_num, void* shared_memory, int *listen_fd)
             : RdmaClient()
 {
   LOG_DEBUG("SharedRdmaClient Start to construct SharedRdmaClient\n");
@@ -981,7 +981,7 @@ SharedRdmaClient::SharedRdmaClient(int slot_size, int slot_num, std::string remo
   allocaotor->init((char *)shared_memory, GetSharedObjSize(slot_size, slot_num, node_num));
   this->init(remote_ip, remote_port, allocaotor, node_num, slot_size, slot_num);
 
-  this->_listen_fd = _listen_fd;
+  _listen_fd = listen_fd;
   _start_idx.store(0);
   
   size = sizeof(ZSendPad) * node_num;
