@@ -142,7 +142,7 @@ void TestSharedClientClass::runClient() {
         assert(ret >= 0);
         if (ret == 0) {
             is_father = false;
-            sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
+            sleep(6);  // 等待SharedRdmaClient在_shared_memory上初始化好
             rdma_client = (SharedRdmaClient *)_shared_memory;
             func(i);
             return;
