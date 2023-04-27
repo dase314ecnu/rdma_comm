@@ -579,7 +579,8 @@ public:
       }
 
       /** 更新zsend中的一些元信息 */
-      for (int k = 0; k < zsend->segment_nums[rear]; ++k) {
+      int msg_num = zsend->segment_nums[rear];
+      for (int k = 0; k < msg_num; ++k) {
         int p = (rear + k) % (_slot_num + 1);
         zsend->states[p].store(SlotState::SLOT_IDLE);
       }

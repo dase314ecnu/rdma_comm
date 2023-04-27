@@ -1096,10 +1096,6 @@ int SharedRdmaClient::rrLoadBalanceStrategy(void *send_content, int size, bool n
       }
 
       zsend->segment_nums[start_rear] = (rear2 >= start_rear ? rear2 - start_rear : (_slot_num + 1 - start_rear + rear2));
-      // zhouhuahui test
-      if ((start_rear + zsend->segment_nums[start_rear]) % (_slot_num + 1) != rear2) {
-        LOG_DEBUG("SharedRdmaClient::rrLoadBalanceStrategy: error: (start_rear + zsend->segment_nums[start_rear]) % (_slot_num + 1) != rear2");
-      }
 
       for (int k = start_rear; k != rear2; k = (k + 1) % (_slot_num + 1)) {
         zsend->nowait[k] = nowait;
@@ -1191,12 +1187,6 @@ bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int si
   bool first = true;
   char *content = (char *)send_content;
   while (left_size > 0) {
-    // zhouhuahui test
-    if (start_slot_idx == new_notwrite_rear) {
-      LOG_DEBUG("SharedRdmaClient::checkNodeCanSend: error: start_slot_idx == new_notwrite_rear");
-    }
-
-
     char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
             + start_slot_idx * _slot_size;
     SlotMeta *meta = (SlotMeta *)buf;
