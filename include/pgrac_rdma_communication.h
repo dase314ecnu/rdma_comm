@@ -578,7 +578,13 @@ public:
         callback(buf);
       }
 
-      /** 更新zsend中的一些元信息 */
+      /** 更新zsend中的一些元信息 
+       * 这里修理了一个很不起眼的bug：必须要先把zsend->segment_nums[rear]取到msg_num中，
+       * 不能这样用：for (int k = 0; k < zsend->segment_nums[rear]; ++k)。
+       * 因为在更新zsend->states的过程中，zsend->front可能也会同步更新，进而zsend->free_slot_num
+       * 也会更新，最终有新的请求会看到有足够的zsend->free_slot_num了，进而在rear处放置消息，进而
+       * 更新了zsend->segment_nums[rear]，而我们这里就会读到错误的值。
+       */
       int msg_num = zsend->segment_nums[rear];
       for (int k = 0; k < msg_num; ++k) {
         int p = (rear + k) % (_slot_num + 1);

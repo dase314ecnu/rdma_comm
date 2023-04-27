@@ -106,7 +106,7 @@ void TestSharedClientMetricsClass::runClient() {
                 
             }
             (*query_num).fetch_add(1);
-            // usleep(1000);
+            usleep(1000);
         }
     };
     
@@ -123,7 +123,9 @@ void TestSharedClientMetricsClass::runClient() {
                     int qps = (*query_num).load();
                     int latsize = (*latencies_size).load();
                     std::sort(latencies, latencies + latsize);
-                    float min_lat = 0.0, avg_lat = 0.0, max_lat = 0.0, p99_lat = 0.0;
+                    float min_lat = 0.0, avg_lat = 0.0, max_lat = 0.0;
+                    float p99_lat = 0.0, p90_lat = 0.0, p80_lat = 0.0;
+                    float p70_lat = 0.0, p60_lat = 0.0, p50_lat = 0.0;
                     if (latsize > 0) {
                         min_lat = latencies[0];
                         max_lat = latencies[latsize - 1];
@@ -135,11 +137,16 @@ void TestSharedClientMetricsClass::runClient() {
                             return total / latsize;
                         }();
                         p99_lat = latencies[(int)(latsize * 0.99)];
+                        p90_lat = latencies[(int)(latsize * 0.90)];
+                        p80_lat = latencies[(int)(latsize * 0.80)];
+                        p70_lat = latencies[(int)(latsize * 0.70)];
+                        p60_lat = latencies[(int)(latsize * 0.60)];
+                        p50_lat = latencies[(int)(latsize * 0.50)];
                     }
                     (*query_num).store(0);
                     (*latencies_size).store(0);
-                    printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p99_lat: %.2f, max_lat: %.2f\n",
-                            qps, min_lat, avg_lat, p99_lat, max_lat);
+                    printf("qps: %d, min_lat: %.2f, avg_lat: %.2f, p50_lat: %.2f, p60_lat: %.2f, p70_lat: %.2f, p80_lat: %.2f, p90_lat: %.2f, p99_lat: %.2f, max_lat: %.2f\n",
+                            qps, min_lat, avg_lat, p50_lat, p60_lat, p70_lat, p80_lat, p90_lat, p99_lat, max_lat);
                 }
             } else {
                 func(i);
