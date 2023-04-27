@@ -1149,7 +1149,7 @@ bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int si
   
   /* 看可用空间是否足够，只有足够了，才能够去填充数据到slot中 */
   int old_free_slot_num = zsend->free_slot_num.load();
-  while (old_free_slot_num < segment_num) {
+  while (old_free_slot_num >= segment_num) {
     int new_free_slot_num = old_free_slot_num - segment_num;
     if (zsend->free_slot_num.compare_exchange_weak(old_free_slot_num, new_free_slot_num, std::memory_order_seq_cst)) {
       ret = 0;
