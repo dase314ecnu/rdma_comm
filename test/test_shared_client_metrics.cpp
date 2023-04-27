@@ -35,10 +35,10 @@ void TestSharedClientMetricsClass::runClient() {
 
     const int min_send_size = 5;
     const int max_send_size = 16000;
+    const int max_latencies_size = 100000;
     
     size_t shm_size = SharedRdmaClient::GetSharedObjSize(_slot_size, 
-            _slot_num, _node_num) + sizeof(int) * 2 * _node_num;
-    const int max_latencies_size = 100000;
+            _slot_num, _node_num) + sizeof(int) * 2 * _node_num + 100 * CACHE_LINE_SIZE;
     shm_size += sizeof(std::atomic<int>) +           // query_num
                 sizeof(std::atomic<int>) +          // latencies_size
                 sizeof(float) * max_latencies_size;              // latencies
@@ -66,6 +66,11 @@ void TestSharedClientMetricsClass::runClient() {
     _shared_memory += sizeof(std::atomic<int>);
     float *latencies = (float *)_shared_memory;
     _shared_memory += sizeof(float) * max_latencies_size;
+
+    // 将_shared_memory对齐到CACHE_LINE_SIZE字节处
+    uintptr_t scratch = reinterpret_cast<uintptr_t>(_shared_memory);
+    uintptr_t scratch_new = MemoryAllocator::add_size(scratch, 0, CACHE_LINE_SIZE);
+    _shared_memory += (scratch_new - scratch);
 
     auto func = [&] (uint32_t test_process_idx) {
         char content[1000000];
@@ -108,7 +113,7 @@ void TestSharedClientMetricsClass::runClient() {
         assert(ret >= 0);
         if (ret == 0) {
             is_father = false;
-            sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
+            sleep(6);  // 等待SharedRdmaClient在_shared_memory上初始化好
             rdma_client = (SharedRdmaClient *)_shared_memory;
             if (i == _num_test_thread) {
                 while (true) {
