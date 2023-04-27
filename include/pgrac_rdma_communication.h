@@ -1072,6 +1072,8 @@ void RdmaServer<T>::receiveThreadFun(int node_idx) {
               buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                       last_head * this->slot_size;
             } else {
+              // zhouhuahui test
+              LOG_DEBUG("mergeAndMoveMultipleSegments");
               this->mergeAndMoveMultipleSegments(last_head, slot_idx, node_idx);
               buf = this->shadow_pool[node_idx];
             }
