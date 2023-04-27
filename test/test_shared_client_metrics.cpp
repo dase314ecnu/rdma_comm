@@ -90,22 +90,23 @@ void TestSharedClientMetricsClass::runClient() {
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
             // 产生随机消息
             *length = uniform(rand_eng) + sizeof(int);
-            rdma_client->PostRequest((void *)content, *length, &response); 
-            // free(response);
-            (*query_num).fetch_add(1);
             if ((j + 1) % 10 == 0) {
+                before_time = std::chrono::steady_clock::now();
+                rdma_client->PostRequest((void *)content, *length, &response); 
                 after_time = std::chrono::steady_clock::now();
                 latency = std::chrono::duration<double, std::micro>(after_time - before_time).count();
-                latency /= 10;
                 if ((*latencies_size).load() < max_latencies_size) {
                     int idx = (*latencies_size).fetch_add(1);
                     if (idx < max_latencies_size) {
                         latencies[idx] = (float)latency;
                     }
                 }
-                usleep(100);
-                before_time = std::chrono::steady_clock::now();
+            } else {
+                rdma_client->PostRequest((void *)content, *length, &response); 
+                
             }
+            (*query_num).fetch_add(1);
+            usleep(100);
         }
     };
     
