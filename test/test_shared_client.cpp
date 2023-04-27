@@ -140,8 +140,8 @@ void TestSharedClientClass::runClient() {
     // }
 
     try {
-        rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port, 
-                _node_num, _shared_memory + sizeof(SharedRdmaClient), listen_fd);
+        rdma_client = SharedRdmaClientFactory::CreateSharedRdmaClient(_shared_memory, _slot_size, _slot_num, remote_ip,
+                remote_port, _node_num, listen_fd);
     } catch (...) {
         LOG_DEBUG("TestSharedClient failed to new SharedRdmaClient");
         return;
@@ -149,16 +149,6 @@ void TestSharedClientClass::runClient() {
     if (rdma_client->Run() != 0) {
         LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
     }
-    
-    uintptr_t address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs);
-    LOG_DEBUG("rdma_client->_rdma_queue_pairs address: %lu, %8 = %lu", address, address % 8);
-    for (int i = 0; i < _node_num; ++i) {
-        address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs[i]);
-        LOG_DEBUG("rdma->_rdma_queue_pairs[%d] address: %lu, %8 = %lu", i, address, address % 8);
-        address = reinterpret_cast<uintptr_t>(rdma_client->_rdma_queue_pairs[i]->local_memory);
-        LOG_DEBUG("rdma->_rdma_queue_pairs[%d].local_memory address: %lu, %128 = %lu", i, address, address % 128);
-    }
-
     
     // zhouhuahui test
     // for (uint32_t i = 0; i < _num_test_thread; ++i) {

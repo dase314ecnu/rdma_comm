@@ -838,13 +838,12 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
               awake->done[slot_idx] = true;
             }
           }
-
         } 
       }
 
       /** 推进zsend->front到notsent_front，并更新free_slot_num */
       int add_free_num = 0;
-      while (send->states[send->front] == SLOT_IDLE) {
+      while (send->front != send->notsent_front && send->states[send->front] == SLOT_IDLE) {
         send->front = (send->front + 1) % (_slot_num + 1);
         add_free_num++;
       }
