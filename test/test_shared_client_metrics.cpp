@@ -106,7 +106,7 @@ void TestSharedClientMetricsClass::runClient() {
                 
             }
             (*query_num).fetch_add(1);
-            usleep(1000);
+            // usleep(1000);
         }
     };
     
