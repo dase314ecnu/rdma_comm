@@ -1069,11 +1069,11 @@ void RdmaServer<T>::receiveThreadFun(int node_idx) {
             char *buf;
             if (slot_idx > last_head) {
               this->mergeMultipleSegments(last_head, slot_idx, node_idx);
-              char *buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
+              buf = (char *)this->rdma_queue_pairs[node_idx]->GetLocalMemory() +
                       last_head * this->slot_size;
             } else {
               this->mergeAndMoveMultipleSegments(last_head, slot_idx, node_idx);
-              char *buf = this->shadow_pool[node_idx];
+              buf = this->shadow_pool[node_idx];
             }
             buf += sizeof(SlotMeta);
             /** 调用工作线程池的接口，将请求发给工作线程池进行处理 */

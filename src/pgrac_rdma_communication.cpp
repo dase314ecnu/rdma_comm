@@ -826,7 +826,7 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
           if (nowait == true) {
             for (int k = 0; k < send->segment_nums[slot_idx]; ++k) {
               int p = (slot_idx + k) % (_slot_num + 1);
-              send->states[p] = SlotState::SLOT_IDLE;
+              send->states[p].store(SlotState::SLOT_IDLE);
             }
           }
 
