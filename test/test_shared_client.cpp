@@ -49,6 +49,10 @@ void TestSharedClientClass::runClient() {
     }
 
     _shared_memory = _shared_memory + sizeof(int) * 2 * _node_num;
+    // 将_shared_memory对齐到CACHE_LINE_SIZE字节处
+    uintptr_t scratch = reinterpret_cast<uintptr_t>(_shared_memory);
+    uintptr_t scratch_new = MemoryAllocator::add_size(scratch, 0, CACHE_LINE_SIZE);
+    _shared_memory += (scratch_new - scratch);
     
     // 子进程向对应的node中写入消息，并通过client.listend_fd通知对应的线程
     // auto func = [&] (uint32_t test_process_idx) {
@@ -146,8 +150,8 @@ void TestSharedClientClass::runClient() {
     }
 
     try {
-        rdma_client = SharedRdmaClientFactory::CreateSharedRdmaClient(_shared_memory, _slot_size, _slot_num, remote_ip,
-                remote_port, _node_num, listen_fd);
+        rdma_client = new (_shared_memory)SharedRdmaClient(_slot_size, _slot_num, remote_ip, remote_port,
+                _node_num, _shared_memory + sizeof(SharedRdmaClient), listen_fd);
     } catch (...) {
         LOG_DEBUG("TestSharedClient failed to new SharedRdmaClient");
         return;

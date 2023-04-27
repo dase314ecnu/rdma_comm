@@ -613,23 +613,6 @@ public:
     }
 };
 
-class SharedRdmaClientFactory {
-public:
-    static SharedRdmaClient* CreateSharedRdmaClient(void *shared_memory, int slot_size, int slot_num, 
-          std::string remote_ip, uint32_t remote_port, int node_num, int *listen_fd)
-    {
-      // 将shared_memory对齐到CACHE_LINE_SIZE字节处
-      uintptr_t scratch = reinterpret_cast<uintptr_t>(shared_memory);
-      uintptr_t scratch_new = MemoryAllocator::add_size(scratch, 0, CACHE_LINE_SIZE);
-      char *memory = (char *)shared_memory;
-      memory += (scratch_new - scratch);
-
-      auto rdma_client = new (memory)SharedRdmaClient(slot_size, slot_num, remote_ip, remote_port,
-              node_num, memory + sizeof(SharedRdmaClient), listen_fd);
-      return rdma_client;
-    }
-};
-
 
 /** 
  * 负责接收来自己多个计算节点的消息，并分配工作线程来处理。
