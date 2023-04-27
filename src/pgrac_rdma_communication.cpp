@@ -1192,9 +1192,10 @@ bool SharedRdmaClient::checkNodeCanSend(int node_idx, void *send_content, int si
   char *content = (char *)send_content;
   while (left_size > 0) {
     // zhouhuahui test
-    if (start_slot_idx == zsend->front || start_slot_idx == new_notwrite_rear) {
-      LOG_DEBUG("SharedRdmaClient::checkNodeCanSend: error: start_slot_idx == zsend->front || start_slot_idx == new_notwrite_rear");
+    if (start_slot_idx == new_notwrite_rear) {
+      LOG_DEBUG("SharedRdmaClient::checkNodeCanSend: error: start_slot_idx == new_notwrite_rear");
     }
+
 
     char *buf = (char *)_rdma_queue_pairs[node_idx]->GetLocalMemory() 
             + start_slot_idx * _slot_size;
