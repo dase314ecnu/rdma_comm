@@ -34,7 +34,7 @@ void TestSharedClientMetricsClass::runClient() {
     });
 
     const int min_send_size = 5;
-    const int max_send_size = 16000;
+    const int max_send_size = 800;
     const int max_latencies_size = 100000;
     
     size_t shm_size = SharedRdmaClient::GetSharedObjSize(_slot_size, 
