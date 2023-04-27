@@ -565,9 +565,8 @@ int RdmaClient::createRdmaQueuePairs() {
       this->_rdma_queue_pairs[i] = (RdmaQueuePair *)(_allocator->alloc(size, 8));
       size = (size_t)_slot_size * (_slot_num + 1);
       void *shared_memory = _allocator->alloc(size, CACHE_LINE_SIZE);
-      this->_rdma_queue_pairs[i] = new RdmaQueuePair(_slot_num, _slot_size, shared_memory,
+      new (this->_rdma_queue_pairs[i])RdmaQueuePair(_slot_num, _slot_size, shared_memory,
               DEVICE_NAME, RDMA_PORT);
-
     } catch (...) {
       throw std::bad_exception();
     }
