@@ -824,7 +824,8 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
           nowait = send->nowait[slot_idx];
           // slot_idx号的slot可以被标记为空闲了，除非slot_idx号的slot对应的nowait == false
           if (nowait == true) {
-            for (int k = 0; k < send->segment_nums[slot_idx]; ++k) {
+            int msg_num = send->segment_nums[slot_idx];
+            for (int k = 0; k < msg_num; ++k) {
               int p = (slot_idx + k) % (_slot_num + 1);
               send->states[p].store(SlotState::SLOT_IDLE);
             }
