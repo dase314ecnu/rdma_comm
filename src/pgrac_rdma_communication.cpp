@@ -506,14 +506,21 @@ void RdmaQueuePair::SetRemoteQPMetaData(QueuePairMetaData &remote_data) {
  */
 RdmaClient::RdmaClient(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
             int node_num, int slot_size, int slot_num)
-            : _remote_ip{remote_ip}, _remote_port{remote_port}, _allocator{allocator},
-              _node_num{node_num}, _slot_size{slot_size}, _slot_num{slot_num}
 {
-  int rc = 0;
-  size_t size = 0;
+  this->init(remote_ip, remote_port, allocator,node_num, slot_size, slot_num);
+}
 
-  rc = this->createRdmaQueuePairs();
-  if (rc != 0) {
+void RdmaClient::init(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
+          int node_num, int slot_size, int slot_num) 
+{
+  _remote_ip = remote_ip;
+  _remote_port = remote_port;
+  _allocator = allocator;
+  _node_num = node_num;
+  _slot_size = slot_size;
+  _slot_num = slot_num;
+
+  if (this->createRdmaQueuePairs() != 0) {
     throw std::bad_exception();
   }
 }
@@ -972,7 +979,7 @@ SharedRdmaClient::SharedRdmaClient(int slot_size, int slot_num, std::string remo
 
   MemoryAllocator *allocaotor = new MemoryAllocator();
   allocaotor->init((char *)shared_memory, GetSharedObjSize(slot_size, slot_num, node_num));
-  RdmaClient(remote_ip, remote_port, allocaotor, node_num, slot_size, slot_num);
+  this->init(remote_ip, remote_port, allocaotor, node_num, slot_size, slot_num);
 
   this->_listen_fd = _listen_fd;
   _start_idx.store(0);

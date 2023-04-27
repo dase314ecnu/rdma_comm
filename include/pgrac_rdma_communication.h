@@ -307,6 +307,8 @@ public:
   /** 创建相关RDMA资源 */
   RdmaClient(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
           int node_num, int slot_size, int slot_num);
+  void init(std::string remote_ip, uint32_t remote_port, MemoryAllocator *allocator,
+          int node_num, int slot_size, int slot_num);
   ~RdmaClient();
   /** Destroy all the resources of RdmaClient */
   void Destroy();
