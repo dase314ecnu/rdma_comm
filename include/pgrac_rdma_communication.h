@@ -510,8 +510,6 @@ public:
     int       *_listen_fd = nullptr;     /* node_num * 2长度 */
     pthread_t  *_send_threads = nullptr;  /* node_num长度 */
 
-    int           _slot_size = 0;
-    int           _slot_num = 0;
     ZSendPad      *_sends = nullptr;        // node_num长度
     ZAwake     *_awakes = nullptr;       // node_num长度
 
