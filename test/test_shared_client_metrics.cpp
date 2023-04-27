@@ -103,9 +103,9 @@ void TestSharedClientMetricsClass::runClient() {
                         latencies[idx] = (float)latency;
                     }
                 }
-                before_time = after_time;
+                usleep(100);
+                before_time = std::chrono::steady_clock::now();
             }
-            usleep(100);
         }
     };
     
