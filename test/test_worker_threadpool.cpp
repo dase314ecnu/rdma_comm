@@ -35,7 +35,7 @@ void TestWorkerThreadpool::Start(void *request, uint32_t node_idx, uint32_t slot
     char *pointer = res_buf;
     memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
     if (this->simple_server->PostResponse(node_idx, slot_idx, res_buf) != 0) {
-        LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send, ret is %d, errno is %d", rc, errno);
+        LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send");
     }
 }
 
