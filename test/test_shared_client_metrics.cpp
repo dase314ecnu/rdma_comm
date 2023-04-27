@@ -105,6 +105,7 @@ void TestSharedClientMetricsClass::runClient() {
                 }
                 before_time = after_time;
             }
+            usleep(100);
         }
     };
     
