@@ -91,7 +91,7 @@ void TestSharedClientMetricsClass::runClient() {
             // 产生随机消息
             *length = uniform(rand_eng) + sizeof(int);
             rdma_client->PostRequest((void *)content, *length, &response); 
-            free(response);
+            // free(response);
             (*query_num).fetch_add(1);
             if ((j + 1) % 10 == 0) {
                 after_time = std::chrono::steady_clock::now();
