@@ -90,6 +90,7 @@ void TestSharedClientClass::runClient() {
         // std::uniform_int_distribution<int> uniform(5, 50);
         std::uniform_int_distribution<int> uniform(5, 300 *this-> _slot_size);
         std::default_random_engine rand_eng; 
+        void *response;
         
         for (int j = 0; j < this->_reqs_per_test_thread; ++j) {
             // 产生随机消息
@@ -100,44 +101,49 @@ void TestSharedClientClass::runClient() {
             }
             buf[*length - 1] = '\0';
             *length += sizeof(int);
+            
+            // zhouhuahui test
+            // if (j % 10 == 9) {
+            //     int ret;
+            //     rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
+            // } else if (j % 10 == 8) {
+            //     void *response = nullptr;
+            //     int rc = 0;
+            //     auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
+            //     wait(&response);
+            //     if (j % 1000 == 0) {
+            //         LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+            //                 test_process_idx, j, MessageUtil::parseLength2(response));
+            //     }
+            //     free(response);
+            // } else {
+            //     auto callback = [&](void *response) {
+            //         if (j % 1000 == 0) {
+            //             LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+            //                     test_process_idx, j, MessageUtil::parseLength2(response));
+            //         }
+            //     };
+            //     rdma_client->PostRequest((void *)content, *length, callback); 
+            // }
 
-            if (j % 10 == 9) {
-                int ret;
-                rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
-            } else if (j % 10 == 8) {
-                void *response = nullptr;
-                int rc = 0;
-                auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
-                wait(&response);
-                if (j % 1000 == 0) {
-                    LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                            test_process_idx, j, MessageUtil::parseLength2(response));
-                }
-                free(response);
-            } else {
-                auto callback = [&](void *response) {
-                    if (j % 1000 == 0) {
-                        LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                                test_process_idx, j, MessageUtil::parseLength2(response));
-                    }
-                };
-                rdma_client->PostRequest((void *)content, *length, callback); 
-            }
+            rdma_client->PostRequest((void *)content, *length, &response);
+            LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                                 test_process_idx, j, MessageUtil::parseLength2(response));
+            sleep(3);
         }
     };
     
-    // zhouhuahui test
-    // for (uint32_t i = 0; i < _num_test_thread; ++i) {
-    //     int ret = fork();
-    //     assert(ret >= 0);
-    //     if (ret == 0) {
-    //         is_father = false;
-    //         sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
-    //         rdma_client = (SharedRdmaClient *)_shared_memory;
-    //         func(i);
-    //         return;
-    //     }
-    // }
+    for (uint32_t i = 0; i < _num_test_thread; ++i) {
+        int ret = fork();
+        assert(ret >= 0);
+        if (ret == 0) {
+            is_father = false;
+            sleep(3);  // 等待SharedRdmaClient在_shared_memory上初始化好
+            rdma_client = (SharedRdmaClient *)_shared_memory;
+            func(i);
+            return;
+        }
+    }
 
     try {
         rdma_client = SharedRdmaClientFactory::CreateSharedRdmaClient(_shared_memory, _slot_size, _slot_num, remote_ip,
@@ -149,12 +155,11 @@ void TestSharedClientClass::runClient() {
     if (rdma_client->Run() != 0) {
         LOG_DEBUG("TestSharedClient failed, failed to run SharedRdmaClient");
     }
-    
-    // zhouhuahui test
-    // for (uint32_t i = 0; i < _num_test_thread; ++i) {
-    //     int status;
-    //     wait(&status);
-    // }
+
+    for (uint32_t i = 0; i < _num_test_thread; ++i) {
+        int status;
+        wait(&status);
+    }
 }
 
 #ifdef TEST_SHARED_CLIENT
@@ -170,7 +175,7 @@ int main() {
         // slot_num: 500
         // num_test_thread: 100  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 100 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 6, 1024, 500, 80, 100000);
+        test.TestSimpleServer2(IsClient{}, 6, 1024, 500, 1, 100000);
     }
 }
 
