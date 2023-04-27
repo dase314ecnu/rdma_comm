@@ -29,25 +29,13 @@ TestWorkerThreadpool::~TestWorkerThreadpool()
 
 void TestWorkerThreadpool::Start(void *request, uint32_t node_idx, uint32_t slot_idx)
 {
-    while (!this->stop)
-    {
-        (void) pthread_spin_lock(&(this->msg_queue->lock));
-        if (this->msg_queue->queue.size() < this->msg_queue->max_msg_num)
-        {
-            Msg msg;
-            msg.request = request;
-            msg.node_idx = node_idx;
-            msg.slot_idx = slot_idx;
-            this->msg_queue->queue.push_back(std::move(msg));
-            (void) pthread_spin_unlock(&(this->msg_queue->lock));
-            break;
-        }
-        else
-        {
-            (void) pthread_spin_unlock(&(this->msg_queue->lock));
-            usleep(100);
-            continue;
-        }
+    // 回复，指定响应的长度是20
+    char res_buf[100];
+    int length = 20;
+    char *pointer = res_buf;
+    memcpy(pointer, reinterpret_cast<char *>(&length), sizeof(int));
+    if (this->simple_server->PostResponse(node_idx, slot_idx, res_buf) != 0) {
+        LOG_DEBUG("TestWorkerThreadpool::workerThreadFun(): failed to post send, ret is %d, errno is %d", rc, errno);
     }
 }
 
