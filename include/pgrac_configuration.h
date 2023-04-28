@@ -9,14 +9,14 @@
 #define TOTAL_COMPUTE_NUM (2)
 
 // rdma客户端，服务器是否使用忙等的方式来得知发送消息的到来，以及响应的到来
-#define USE_BUSY_POLLING (true)
+#define USE_BUSY_POLLING (false)
 
 /** 
  * 是否实现rdma框架层的组发送机制，也就是将一个qp中连续的多个消息一次性发送出去。
  * 如果使用组发送机制，则需要imm data做一些修改：imm data的前24个字节表示slot_idx，后8个字节
  * 表示从slot_idx开始的多少个slot都是已经到来的消息。
  */
-#define USE_GROUP_POST_SEND (true)
+#define USE_GROUP_POST_SEND (false)
 #define IMM_DATA_SLOT_IDX_MASK (0xFFFFFF00)
 #define IMM_DATA_MSG_NUM_MASK (0x000000FF)
 #define IMM_DATA_SHIFT (8)

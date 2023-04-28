@@ -939,26 +939,11 @@ void SharedRdmaClient::sendThreadFun(int node_idx) {
       return true;
     };
     
-    if (!USE_BUSY_POLLING) {
-      if (event.data.fd == qp->GetChannel()->fd) {
-        if (!process_wc()) {
-          return;
-        }
-      } else if (event.data.fd == _listen_fd[node_idx * 2 + 1]) {
-        if (!process_send_request()) {
-          return;
-        }
-      } else {
-        /* can not reach here */
-        return;
-      }
-    } else {
-      if (!process_wc()) {
-        return;
-      }
-      if (!process_send_request()) {
-        return;
-      }
+    if (!process_wc()) {
+      return;
+    }
+    if (!process_send_request()) {
+      return;
     }
   }
 }
