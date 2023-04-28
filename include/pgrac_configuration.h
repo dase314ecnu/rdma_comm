@@ -31,7 +31,7 @@
     (imm_data = (msg_num | imm_data))
 
 // backend是否使用忙等的方式来得知响应是否到来
-#define USE_BACKEND_BUSY_POLLING (true)
+#define USE_BACKEND_BUSY_POLLING (false)
 
 #define CACHE_LINE_SIZE (128)
 
@@ -41,8 +41,8 @@
 // #define TEST_SHARED_MEMORY
 // #define TEST_SIMPLE_SERVER
 // #define TEST_SIMPLE_SERVER2
-#define TEST_SHARED_CLIENT
-// #define TEST_SHARED_CLIENT_METRICS
+// #define TEST_SHARED_CLIENT
+#define TEST_SHARED_CLIENT_METRICS
 
 
 /** 
