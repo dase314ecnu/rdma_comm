@@ -106,34 +106,27 @@ void TestSharedClientClass::runClient() {
             buf[*length - 1] = '\0';
             *length += sizeof(int);
             
-            // zhouhuahui test
-            // if (j % 10 == 9) {
-            //     int ret;
-            //     rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
-            // } else if (j % 10 == 8) {
-            //     void *response = nullptr;
-            //     int rc = 0;
-            //     auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
-            //     wait(&response);
-            //     if (j % 1000 == 0) {
-            //         LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-            //                 test_process_idx, j, MessageUtil::parseLength2(response));
-            //     }
-            //     free(response);
-            // } else {
-            //     auto callback = [&](void *response) {
-            //         if (j % 1000 == 0) {
-            //             LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-            //                     test_process_idx, j, MessageUtil::parseLength2(response));
-            //         }
-            //     };
-            //     rdma_client->PostRequest((void *)content, *length, callback); 
-            // }
-
-            rdma_client->PostRequest((void *)content, *length, &response);
-            if (j % 1000 == 0) {
-                LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
-                                 test_process_idx, j, MessageUtil::parseLength2(response));
+            if (j % 10 == 9) {
+                int ret;
+                rdma_client->AsyncPostRequestNowait((void *)content, *length, &ret);
+            } else if (j % 10 == 8) {
+                void *response = nullptr;
+                int rc = 0;
+                auto wait = rdma_client->AsyncPostRequest((void *)content, *length, &rc);
+                wait(&response);
+                if (j % 1000 == 0) {
+                    LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                            test_process_idx, j, MessageUtil::parseLength2(response));
+                }
+                free(response);
+            } else {
+                auto callback = [&](void *response) {
+                    if (j % 1000 == 0) {
+                        LOG_DEBUG("test_process of %u has sent %dth(from 0) msg, get response length: %d", 
+                                test_process_idx, j, MessageUtil::parseLength2(response));
+                    }
+                };
+                rdma_client->PostRequest((void *)content, *length, callback); 
             }
         }
     };
