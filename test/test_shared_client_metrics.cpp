@@ -33,8 +33,8 @@ void TestSharedClientMetricsClass::runClient() {
         }
     });
 
-    const int min_send_size = 5;
-    const int max_send_size = 16000;
+    const int min_send_size = 8192;
+    const int max_send_size = 8200;
     const int max_latencies_size = 100000;
     
     size_t shm_size = SharedRdmaClient::GetSharedObjSize(_slot_size, 
@@ -106,7 +106,7 @@ void TestSharedClientMetricsClass::runClient() {
                 
             }
             (*query_num).fetch_add(1);
-            usleep(10000);
+            usleep(100);
         }
     };
     
@@ -178,14 +178,14 @@ int main() {
     if (IS_SERVER) {
         // 由于是测试，所以我写的工作线程很简单，所有工作线程都从一个队列中取数据
         // 因此如果将工作线程的数量设置的太大，则会大大增加竞争，性能非常差
-        test.TestSimpleServer2(IsServer{}, 3, 50, 6, 1024, 1000); 
+        test.TestSimpleServer2(IsServer{}, 3, 50, 4, 9000, 4000); 
     } else {
         // node_num: 6
         // slot_size: 1024
         // slot_num: 500
         // num_test_thread: 80  有num_test_thread个线程同时来发送请求
         // reqs_per_test_thread: 100000 每个线程发送reqs_per_test_thread个请求
-        test.TestSimpleServer2(IsClient{}, 6, 1024, 1000, 10, 10000000);
+        test.TestSimpleServer2(IsClient{}, 4, 9000, 4000, 100, 10000000);
     }
 }
 
